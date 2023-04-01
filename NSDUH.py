@@ -8,6 +8,15 @@ import json
 import geopandas as gpd
 import csv
 
+
+# TODO: 
+# - need to get rid of duplicates, may need to change dict to write out a csv 
+#   line instead and insert that into a set as a string.
+# - make states work like counties and merge code where I can
+
+
+
+
 # when I installed #pip-system-certs, everything else broke with 
 # SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED], 
 # I uninstalled it and everything worked again
@@ -59,7 +68,10 @@ from sqlalchemy import create_engine
 #-----------------------
 # state level, RDAS 2018-2019 (last part of request)
 #-----------------------
-url = "https://rdas.samhsa.gov/api/surveys/NSDUH-2018-2019-RD02YR/crosstab/?column=ABODMRJ&control=STNAME&filter=STNAME%3DHAWAII&row=CATAG2&run_chisq=false&weight=DASWT_1&format=json"
+#url = "https://rdas.samhsa.gov/api/surveys/NSDUH-2018-2019-RD02YR/crosstab/?column=ABODMRJ&control=STNAME&filter=STNAME%3DHAWAII&row=CATAG2&run_chisq=false&weight=DASWT_1&format=json"
+
+# this breaks things, so testing it out, delete after
+url = "https://rdas.samhsa.gov/api/surveys/NSDUH-2018-2019-RD02YR/crosstab/?row=STNAME&column=UDPYHRPNR&filter=STNAME%3DHAWAII&weight=DASWT_1&run_chisq=false&format=json"
 
 dir = "/Users/jgeis/Work/DOH/NSDUH_Processing/data_files/"
 
@@ -69,6 +81,7 @@ json_file_in = "temp.json"
 json_path = dir + json_file_in
 csv_file = "temp.csv"
 csv_path = dir + csv_file
+
 
 # STCTYCOD2 Collapsed State County Code = {15: HI, 001: Hawaii County, 15: HI, 003: Honolulu County, 15: HI 005: Kauai County, 15: HI 007: Maui County}
 county_control = "STCTYCOD2"
@@ -105,24 +118,29 @@ def load_state_and_county_data():
     get_all_nsduh_state(results)
     write_json_to_csv_file(results)
 
-# this goes through all the combinations of control, rows, and columns. It then
-# - It parses the data for each set of three, pulling out what we want
-# - creates a json item for each set
+
+
+def getUrlData(index, base_url, control, row, column, filter, weight):
+    local_url = f"{base_url}?control={control}&row={row}&column={column}&filter={filter}&weight={weight}&run_chisq=false&format=json"
+    print(f"\n\nindex: {index}, control: {control}, row: {row}, column: {column},  filter: {filter}, weight: {weight}")
+    if not control:
+        local_url = f"{base_url}?row={row}&column={column}&filter={filter}&weight={weight}&run_chisq=false&format=json"
+        #print(f"\n\nno control, index: {index}, row: {control}, column: {column},  filter: {filter}, weight: {weight}")
+    print(f"{local_url}")
+    resp = req.get(local_url)
+    print(f"{resp}\n\n") # this just prints "<Response [code num]>"
+    return resp
+
+
+# this goes through all the combinations of control, rows, and columns. 
+# If it gets a response code 400, {"errorCode":"DISCLOSURE_LIMITATION"}
+# I drop the row (demographics), moving the control to be the new row value, then try again.
+# In most cases, this is enough to get data, there are still a few that are failing.
+# Once I have data, it then
+# - calls a method which parses out the data we want
 # - writes the data out to a csv file
-# 
-# When I first ran this, only 29 and 31 brought back data. A few runs later, I see all these have come back:
-# index: 1, control: STCTYCOD2, row: CATAG2, column: ABODMRJ
-# index: 2, control: STCTYCOD2, row: CATAG2, column: ABODALC
-# index: 10, control: STCTYCOD2, row: CATAG3, column: ABODALC
-# index: 25, control: STCTYCOD2, row: IRSEX, column: ABODMRJ
-# index: 26, control: STCTYCOD2, row: IRSEX, column: ABODALC
-# index: 29, control: STCTYCOD2, row: IRSEX, column: AMIYR_U
-# https://rdas.samhsa.gov/api/surveys/NSDUH-2010-2019-RD10YR/crosstab/?control=STCTYCOD2&row=IRSEX&column=AMIYR_U&weight=DASWT_4&run_chisq=false&format=json
-# index: 30, control: STCTYCOD2, row: IRSEX, column: SMIYR_U
-# index: 31, control: STCTYCOD2, row: IRSEX, column: AMHTXRC3
-# https://rdas.samhsa.gov/api/surveys/NSDUH-2010-2019-RD10YR/crosstab/?control=STCTYCOD2&row=IRSEX&column=AMHTXRC3&weight=DASWT_4&run_chisq=false&format=json
-# index: 32, control: STCTYCOD2, row: IRSEX, column: AMHTXND2
 def get_all_nsduh_county(results):
+    print(f"in get_all_nsduh_county")
     #https://rdas.samhsa.gov/api/surveys/NSDUH-2010-2019-RD10YR/crosstab/?control=STCTYCOD2&row=CATAG2&column=ABODMRJ&weight=DASWT_4&run_chisq=false&format=json
     #substate_url = f"https://rdas.samhsa.gov/api/surveys/NSDUH-2010-2019-RD10YR/crosstab/?control={control}&row={row}&column={column}&weight=DASWT_4&run_chisq=false&format=json"
     index = 1
@@ -130,41 +148,56 @@ def get_all_nsduh_county(results):
     for row in rows:
         for column in county_columns:
             try:
-                county_url = f"https://rdas.samhsa.gov/api/surveys/NSDUH-2010-2019-RD10YR/crosstab/?control={county_control}&row={row}&column={column}&filter={county_filter}&weight={county_weight}&run_chisq=false&format=json"
-                print(f"\n\nindex: {index}, control: {county_control}, row: {row}, column: {column},  filter: {county_filter}, weight: {county_weight}")
-                print(f"{county_url}")
-                resp = req.get(county_url)
-                print(f"{resp}\n\n") # this just prints "<Response [code num]>"
+                base_url = "https://rdas.samhsa.gov/api/surveys/NSDUH-2010-2019-RD10YR/crosstab/"
+                resp = getUrlData(index, base_url, county_control, row, column, county_filter, county_weight)
                 if resp.status_code == 200:
-                    jsondata = json.loads(resp.text)
-                    parse_county_data(jsondata, results)
+                    parse_county_data(json.loads(resp.text), results, True)
+                # if previous attempt didn't work and got a 400, it's likely throttled due to disclosure limitations,
+                # move control to row and drop the previous row which was a demographic thing
+                elif resp.status_code == 400 and resp.text == '{"errorCode":"DISCLOSURE_LIMITATION"}':
+                    print(f"resp.reason: {resp.reason}")
+                    print(f"resp.text: {resp.text}")
+                    resp = getUrlData(index, base_url, "",county_control, column, county_filter, county_weight)
+                    if resp.status_code == 200:
+                        parse_county_data(json.loads(resp.text), results, False)
+                    elif resp.status_code == 400:
+                        print(f"resp.reason: {resp.reason}")
+                        print(f"resp.text: {resp.text}")
+                    
                     #print(jsondata)
             except Exception as err:
-                print(err)
+                print(f"get_all_nsduh_county error: {err}")
             index = index + 1
-    #print(results)
+    print(f"leaving get_all_nsduh_county")
+
     #write_json_to_csv_file(results)
 
 def get_all_nsduh_state(results):
-    print(f"in load_all_nsduh_state")
+    print(f"in get_all_nsduh_state")
     index = 1
     #results = []
     for row in rows:
         for column in state_columns:
             try:
-                state_url = f"https://rdas.samhsa.gov/api/surveys/NSDUH-2018-2019-RD02YR/crosstab/?control={state_control}&row={row}&column={column}&filter={state_filter}&weight={state_weight}&run_chisq=false&format=json"
-                print(f"\n\nindex: {index}, control: {state_control}, row: {row}, column: {column}, filter: {state_filter}, weight: {state_weight}")
-                print(f"{state_url}")
-                resp = req.get(state_url)
-                print(f"{resp}\n\n") # this just prints "<Response [code num]>"
+                base_url = f"https://rdas.samhsa.gov/api/surveys/NSDUH-2018-2019-RD02YR/crosstab/"
+                resp = getUrlData(index, base_url, state_control, row, column, state_filter, state_weight)
                 if resp.status_code == 200:
-                    jsondata = json.loads(resp.text)
-                    parse_state_data(jsondata, results)
-                    #print(jsondata)
+                    parse_state_data(json.loads(resp.text), results, True)
+                # if previous attempt didn't work and got a 400, it's likely throttled due to disclosure limitations,
+                # move control to row and drop the previous row which was a demographic thing
+                elif resp.status_code == 400 and resp.text == '{"errorCode":"DISCLOSURE_LIMITATION"}':
+                    print(f"resp.reason: {resp.reason}")
+                    print(f"resp.text: {resp.text}")
+                    resp = getUrlData(index, base_url, "", state_control, column, state_filter, state_weight)
+                    if resp.status_code == 200:
+                        parse_state_data(json.loads(resp.text), results, False)
+                    elif resp.status_code == 400:
+                        print(f"resp.reason: {resp.reason}")
+                        print(f"resp.text: {resp.text}")
             except Exception as err:
-                print(err)
+                print(f"get_all_nsduh_state error: {err}")
             index = index + 1
-    #print(results)
+    print(f"leaving get_all_nsduh_state")
     #write_json_to_csv_file(results)
 
 def read_shape_file():
@@ -206,15 +239,34 @@ def print_url_contents():
 
 # test method which gets data from the current url and calls parse_county_data
 # make sure current url is the county one, not state one.
-def parse_current_url_county_data():
+def parse_current_url_county_data(hasControl):
     print(f"parse_current_url_county_data: {url}")
     resp = req.get(url)
     print(f"{resp}\n\n") # this just prints "<Response [code num]>"
     if resp.status_code == 200:
         jsondata = json.loads(resp.text)
         results = []
-        parse_county_data(jsondata, results)
+        parse_county_data(jsondata, results, hasControl)
         #write_json_to_csv_file(results)
+    else:
+        print(f"resp.reason: {resp.reason}")
+        print(f"resp.text: {resp.text}")
+
+def parse_current_url_state_data(hasControl):
+    try:
+        print(f"parse_current_url_state_data: {url}")
+        resp = req.get(url)
+        print(f"response: {resp}\n\n") # this just prints "<Response [code num]>"
+        if resp.status_code == 200:
+            jsondata = json.loads(resp.text)
+            results = []
+            parse_state_data(jsondata, results, hasControl)
+            #write_json_to_csv_file(results)
+        else:
+            print(f"resp.reason: {resp.reason}")
+            print(f"resp.text: {resp.text}")
+    except Exception as err:
+        print(f"parse_current_url_state_data error: error.text: error: {err} ")
 
 def write_json_to_csv_file(results):
     # write out to csv
@@ -226,58 +278,96 @@ def write_json_to_csv_file(results):
     csv_writer.writerows(results) 
     data_file.close()
 
-def parse_county_data(jsondata, results):
-    jsondata = jsondata["results"]
 
-    # I don't need to look up control as I already have those
-    row_dict = make_dict(jsondata, "row")
-    col_dict = make_dict(jsondata, "column")
-    cells = jsondata["cells"]
-    for cell in cells:
-        control_option = cell["control_option"]
-        row_option = cell["row_option"]
-        col_option = cell["column_option"]
-        
-        # don't bother with anything unless control, row, and column are set, don't need totals
-        if control_option and row_option and col_option:
-            d = dict({
-                "state": "Hawaii",
-                "county": counties[control_option],
-                "row_type": row_dict["title"],
-                "col_type": col_dict["title"],
-                "row_value": row_dict[row_option],
-                "col_value": col_dict[col_option],
-                "count_unweighted": cell["count"]["unweighted"],
-                "count_weighted": cell["count"]["weighted"]
-                })
-            results.append(d)
-    #print (results)
+# after moving control to row, dropping demographics, for throttled results, these still fail:
+# 3, 11, 19, 27
+# all of these use "ABODHER" as the column.  
+# TODO: I need to make sure results array removes duplicate results because 
+# we will get 4 duplicates for each time we drop the control
+#
+# Given jsondata, it loops through all the cells
+# - parses the data for each cell, pulling out what we want
+# - creates a json item for each set, formatting it so all entries will be consistent in spite of original json differences
+# this method is _messy_ aas it has to account for the json being formatted differently 
+# if the json was generated from a url with a control param or not.
+# results - storage for all the data I'm parsing out.  Gets modified directly, so there's no return value from this
+# hasControl - True if the jsondata was generated using a url that had a control parameter, 
+#              False if the control was moved to the row param
+def parse_county_data(jsondata, results, hasControl):
+    print(f"in parse_county_data: hasControl: {hasControl}")
+    try:
+        jsondata = jsondata["results"]
+        # make dicts of the row and column options, we need this to translate the row/column numbers into human-readable text
+        row_dict = make_dict(jsondata, "row")
+        col_dict = make_dict(jsondata, "column")
+        cells = jsondata["cells"]
+        for cell in cells:
+            row_option = cell["row_option"]
+            col_option = cell["column_option"]
+            # don't bother with anything unless row and column values are set for that cell since we don't want totals
+            if row_option and col_option:
+                if not hasControl:
+                    county_value = counties[row_option]
+                    d = makeCellDict(county_value, "", col_dict["title"], "", col_dict[col_option], cell["count"]["unweighted"], cell["count"]["weighted"])
+                    #print(f"dict: {d}")
+                    results.append(d)
+                else:
+                    county_value = ""
+                    control_option = cell["control_option"]
+                    if control_option:
+                        county_value = counties[control_option]
+                        d = makeCellDict(county_value, row_dict["title"], col_dict["title"], row_dict[row_option], col_dict[col_option], cell["count"]["unweighted"], cell["count"]["weighted"])
+                        #print(f"dict: {d}")
+                        results.append(d)    
+        print("success")
+    except Exception as err:
+        print(f"parse_county_data error: error.text: error: {err} ")
+    print("leaving parse_county_data")
 
-def parse_state_data(jsondata, results):
-    jsondata = jsondata["results"]
 
-    # I don't need to look up control as I already have those
-    row_dict = make_dict(jsondata, "row")
-    col_dict = make_dict(jsondata, "column")
-    cells = jsondata["cells"]
-    for cell in cells:
-        control_option = cell["control_option"]
-        row_option = cell["row_option"]
-        col_option = cell["column_option"]
-        
-        # don't bother with anything unless control, row, and column are set, don't need totals
-        if control_option and row_option and col_option:
-            d = dict({
-                "state": "Hawaii",
-                "county": "",
-                "row_type": row_dict["title"],
-                "col_type": col_dict["title"],
-                "row_value": row_dict[row_option],
-                "col_value": col_dict[col_option],
-                "count_unweighted": cell["count"]["unweighted"],
-                "count_weighted": cell["count"]["weighted"]
-                })
-            results.append(d)
+def makeCellDict(county, row_type, col_type, row_value, col_value, count_unweighted, count_weighted):
+    return dict({
+        "state": "Hawaii",
+        "county": county,
+        "row_type": row_type,
+        "col_type": col_type,
+        "row_value": row_value,
+        "col_value": col_value,
+        "count_unweighted": count_unweighted,
+        "count_weighted": count_weighted
+    })
+
+
+# items that still have limited data, even after dropping demographics: 
+# 57, 51, 41, 35, 25, 19, 9, 3
+def parse_state_data(jsondata, results, hasControl):
+    print(f"in parse_state_data: hasControl: {hasControl}")
+    try:
+        jsondata = jsondata["results"]
+        # I don't need to look up control as I already have those
+        row_dict = make_dict(jsondata, "row")
+        col_dict = make_dict(jsondata, "column")
+        cells = jsondata["cells"]
+        for cell in cells:
+            row_option = cell["row_option"]
+            col_option = cell["column_option"]
+            
+            # don't bother with anything unless row, and column are set for that cell since we don't want totals
+            if row_option and col_option:
+                if not hasControl:
+                    d = makeCellDict("", "", col_dict["title"], "", col_dict[col_option], cell["count"]["unweighted"], cell["count"]["weighted"])
+                    #print(f"dict: {d}")
+                    results.append(d)
+                else:
+                    control_option = cell["control_option"]
+                    if control_option:
+                        d = makeCellDict("", row_dict["title"], col_dict["title"], row_dict[row_option], col_dict[col_option], cell["count"]["unweighted"], cell["count"]["weighted"])
+                        #print(f"dict: {d}")
+                        results.append(d)    
+        print("success")
+    except Exception as err:
+        print(f"parse_state_data error: error.text: error: {err}")
+    print("leaving parse_state_data")
 
 
 # used for getting keys and titles of rows and columns, works for both state and county data
@@ -298,9 +388,11 @@ def make_dict(jsondata, key):
 
 #load_state_and_county_data()
 #print_url_contents()
-#get_all_nsduh_state([])
-get_all_nsduh_county([])
-#parse_current_url_county_data()
+get_all_nsduh_state([])
+#get_all_nsduh_county([])
+#parse_current_url_county_data(False)
+#parse_current_url_state_data(False)
+
 #read_shape_file()
 
 
