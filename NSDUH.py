@@ -7,9 +7,8 @@ import requests as req
 import json
 import geopandas as gpd
 import csv
-
-#import mysql.connector as msql
-#from mysql.connector import Error
+import shapefile
+#import pyodbc
 
 
 # when I installed #pip-system-certs, everything else broke with 
@@ -17,69 +16,34 @@ import csv
 # I uninstalled it and everything worked again
 # unfortunately, this means I can't load shapefiles by url
 
-import shapefile
+# TODO:
+# - fix csv to mssql issue
+# - figure out how to incorporate shapefile data
+# - add key to db table so duplicates aren't inserted
+# - record all the year/variable combos that cause 500 errors and print them out at the end so we can verify and maybe change the variables
 
 
-#import mysql.connector as msql
-#from mysql.connector import Error
+import mysql.connector as msql
+from mysql.connector import Error
 import sqlalchemy as sa
 from sqlalchemy import create_engine
 #from sqlalchemy import text
 #from sqlalchemy import create_engine, types
 
-
-# make repo here: https://github.com/orgs/HI-OD2A-P2P
-# and check it in
-
-
 # fields you will need to edit before running this
-
-#-----------------------
-# county level: Use RDAS (2010 to 2019) (first part of request)
-#-----------------------
-# to test any of the below urls via the user interface, 
-# - edit the front part of the url to match <https://rdas.samhsa.gov/#/survey/>
-# - strip off the format=json at the back
-
-# This doesn't get data, this just gets all the possible rows, columns, and controls.
-#url = "https://rdas.samhsa.gov/api/surveys/NSDUH-2010-2019-RD10YR?format=json"
-# Just an experiment of what happens if I add parameters to the above.  No data, just listing of options
-#url = "https://rdas.samhsa.gov/api/surveys/NSDUH-2010-2019-RD10YR?column=ABODMRJ&control=COUTYP2&results_received=true&row=CATAG2&run_chisq=false&weight=DASWT_4&format=json"
-# same as precious w/ different searh params.  Got different results, but don't yet understand the significance and not sure if I need to.
-#url = "https://rdas.samhsa.gov/api/surveys/NSDUH-2010-2019-RD10YR?column=ABODMRJ&control=STCTYCOD2&results_received=false&row=CATAG2&run_chisq=false&weight=DASWT_4&format=json"
-
-# adding crosstab to the url gets the actual data, the following urls are all crosstab
-# won't load.  Gets: "{'errorCode': 'DISCLOSURE_LIMITATION'}"
-#url = "https://rdas.samhsa.gov/api/surveys/NSDUH-2010-2019-RD10YR/crosstab/?row=CATAG2&column=ABODMRJ&control=STCTYCOD2&weight=DASWT_4&run_chisq=false&format=json"
-# This data matches what you see on the site after a search.  Same as first crosstab url but had to remove control as it causes a no-result
-#url = "https://rdas.samhsa.gov/api/surveys/NSDUH-2010-2019-RD10YR/crosstab/?row=CATAG2&column=ABODMRJ&weight=DASWT_4&run_chisq=false&format=json"
-# from jason, note the STCTYCOD2 is a column, not a control
-#url = "https://rdas.samhsa.gov/api/surveys/NSDUH-2010-2019-RD10YR/crosstab/?row=CIGYR&column=STCTYCOD2&weight=DASWT_4&run_chisq=false&filter=STCTYCOD2%3D85%2C83%2C84%2C82&format=json"
-
-# USE THIS! one of the few county urls that works
-#url = "https://rdas.samhsa.gov/api/surveys/NSDUH-2010-2019-RD10YR/crosstab/?control=STCTYCOD2&row=CATAG2&column=ABODMRJ&filter=STCTYCOD2%3D85%2C83%2C84%2C82&weight=DASWT_4&run_chisq=false&format=json"
-# this is the url to see above results in the UI
-#https://rdas.samhsa.gov/#/survey/NSDUH-2010-2019-RD10YR/crosstab/?column=ABODMRJ&control=STCTYCOD2&filter=STCTYCOD2%3D85%2C83%2C84%2C82&results_received=true&row=CATAG2&run_chisq=false&weight=DASWT_4
-
-#-----------------------
-# state level, RDAS 2018-2019 (last part of request)
-#-----------------------
-#url = "https://rdas.samhsa.gov/api/surveys/NSDUH-2018-2019-RD02YR/crosstab/?column=ABODMRJ&control=STNAME&filter=STNAME%3DHAWAII&row=CATAG2&run_chisq=false&weight=DASWT_1&format=json"
-#url = "https://rdas.samhsa.gov/#/survey/NSDUH-2016-2017-RD02YR/crosstab/?column=ABODMRJ&control=STNAME&filter=STNAME%3DHAWAII&row=CATAG2&run_chisq=false&weight=DASWT_1&format=json"
-
-
-
-# this one is testing broken code
-url = "https://rdas.samhsa.gov/api/surveys/NSDUH-2010-2019-RD10YR/crosstab/?control=STCTYCOD2&row=IRSEX&column=AMHTXND2&filter=STCTYCOD2%3D85%2C83%2C84%2C82&weight=DASWT_4&run_chisq=false&format=json"
-
+db_driver = "mysql+pymysql"
+db_host = '<Your database host here>'
+db_name = '<Your database name here>'
+db_table = '<Your table name here>'
+db_user = "<Your Username Here>"
+db_pwd = "<Your Password Here>"
 
 dir = "/Users/jgeis/Work/DOH/NSDUH-Processing/data_files/"
-
 shp_file = "ShapeFile2018/SubstateRegionData161718.shp"
 shp_path = dir + shp_file
 json_file_in = "temp.json"
 json_path = dir + json_file_in
-csv_file = "temp.csv"
+csv_file = "nsduh.csv"
 csv_path = dir + csv_file
 
 """
@@ -124,30 +88,18 @@ county_years = [{"url_term":"NSDUH-2010-2019-RD10YR","year_range":"2010-2019","s
 # turns out the older years use different values for the counties than the latest.
 # fortunately, there was no overlap, so I just put them all in the same dict for simplicity
 counties = {"74":"Hawaii County", "75":"Honolulu County","76":"Maui County","77":"County Not Specified","82":"Hawaii County", "83":"Honolulu County","84":"Kauai County","85":"Maui County"}
-#counties = {"74":"Hawaii County", "75":"Honolulu County","76":"Maui County","77":"County Not Specified"}
-#counties = {"82":"Hawaii County", "83":"Honolulu County","84":"Kauai County","85":"Maui County"} # orig
 
-
-"""
-# this one fails because the column AMIYR_U doesn't exist for this year group
-index: 5, control: STCTYCOD, row: CATAG2, column: AMIYR_U,  filter: STCTYCOD%3D74%2C75%2C76%2C77, weight: DASWT_8
-https://rdas.samhsa.gov/api/surveys/NSDUH-2002-2017-RD16YR/crosstab/?control=STCTYCOD&row=CATAG2&column=AMIYR_U&filter=STCTYCOD%3D74%2C75%2C76%2C77&weight=DASWT_8&run_chisq=false&format=json
-<Response [500]>
-
-# this one fails because the column SMIYR_U doesn't exist for this year group
-index: 6, control: STCTYCOD, row: CATAG2, column: SMIYR_U,  filter: STCTYCOD%3D74%2C75%2C76%2C77, weight: DASWT_8
-https://rdas.samhsa.gov/api/surveys/NSDUH-2002-2017-RD16YR/crosstab/?control=STCTYCOD&row=CATAG2&column=SMIYR_U&filter=STCTYCOD%3D74%2C75%2C76%2C77&weight=DASWT_8&run_chisq=false&format=json
-<Response [500]>
-"""
-
-
+# main driver of everything.  Calls methods to get county data, 
+# state data, write it out to a csv (as a backup), and then out to the database
 def load_state_and_county_data():
     results = set()
     get_nsduh_data(True, results) # county
     get_nsduh_data(False, results) # state
-    write_json_to_csv_file(results)
+    df = write_json_to_csv_file(results)
+    convert_to_db(df)
 
-def getUrlData(index, base_url, control, row, column, filter, weight):
+# used in get_nsduh_data to generate a url using the given arguments and return the response from doing a get on that url
+def get_url_data(index, base_url, control, row, column, filter, weight):
     local_url = f"{base_url}?control={control}&row={row}&column={column}&filter={filter}&weight={weight}&run_chisq=false&format=json"
     print(f"\n\nindex: {index}, control: {control}, row: {row}, column: {column},  filter: {filter}, weight: {weight}")
     if not control:
@@ -158,14 +110,11 @@ def getUrlData(index, base_url, control, row, column, filter, weight):
     print(f"{resp}\n\n") # this just prints "<Response [code num]>"
     return resp
 
-
 # this goes through all the combinations of control, rows, and columns. 
 # If it gets a response code 400, {"errorCode":"DISCLOSURE_LIMITATION"}
 # I drop the row (demographics), moving the control to be the new row value, then try again.
 # In most cases, this is enough to get data, there are still a few that are failing.
-# Once I have data, it then
-# - calls a method which parses out the data we want
-# - writes the data out to a csv file
+# Once I have data, it then calls a method which parses out the data we want
 def get_nsduh_data(isCounty, results):
     print(f"in get_all_nsduh_data")
     try:
@@ -191,7 +140,7 @@ def get_nsduh_data(isCounty, results):
             for row in rows:
                 for column in columns:
                     index = index + 1
-                    resp = getUrlData(index, base_url, ctl, row, column, fil, wt)
+                    resp = get_url_data(index, base_url, ctl, row, column, fil, wt)
                     if resp.status_code == 200:
                         parse_data(isCounty, json.loads(resp.text), results, True, start_year, end_year, year_range)
                     # if previous attempt didn't work and got a 400, it's likely throttled due to disclosure limitations,
@@ -199,7 +148,7 @@ def get_nsduh_data(isCounty, results):
                     elif resp.status_code == 400 and resp.text == '{"errorCode":"DISCLOSURE_LIMITATION"}':
                         print(f"resp.reason: {resp.reason}")
                         print(f"resp.text: {resp.text}")
-                        resp = getUrlData(index, base_url, "", ctl, column, fil, wt)
+                        resp = get_url_data(index, base_url, "", ctl, column, fil, wt)
                         if resp.status_code == 200:
                             parse_data(isCounty, json.loads(resp.text), results, False, start_year, end_year, year_range)
                         elif resp.status_code == 400:
@@ -207,9 +156,84 @@ def get_nsduh_data(isCounty, results):
                             print(f"resp.text: {resp.text}")
     except Exception as err:
         print(f"get_nsduh_data error: {err}")
-        
     print(f"leaving get_nsduh_data")
-    #write_json_to_csv_file(results)
+
+# called by parse_data to generate a dict using all the given parameters.
+# kinda brain-dead, but I wanted to make sure if one got changed, the both got changed, and this would assure that.
+def make_cell_dict(county, row_type, col_type, row_value, col_value, count_unweighted, count_weighted, start_year, end_year, year_range):
+    #return f"'Hawaii', {county}, {row_type}, {col_type}, {row_value}, {col_value}, {count_unweighted}, {count_weighted}"
+    return dict({
+        "state": "Hawaii",
+        "county": county,
+        "row_type": row_type,
+        "col_type": col_type,
+        "row_value": row_value,
+        "col_value": col_value,
+        "count_unweighted": count_unweighted,
+        "count_weighted": count_weighted,
+        "start_year": start_year,
+        "end_year": end_year,
+        "year_range": year_range
+    })
+
+# Given jsondata, it loops through all the cells
+# - parses the data for each cell, pulling out what we want
+# - creates a json item for each set, formatting it so all entries will be consistent in spite of original json differences
+# this method is _messy_ as it has to account for the json being formatted differently 
+# if the json was generated from a url with a control param or not.
+# results - storage for all the data I'm parsing out.  Gets modified directly, so there's no return value from this
+# hasControl - True if the jsondata was generated using a url that had a control parameter, 
+#              False if the control was moved to the row param
+def parse_data(isCounty, jsondata, results, hasControl, start_year, end_year, year_range):
+    print(f"in parse_data: hasControl: {hasControl}")
+    try:
+        jsondata = jsondata["results"]
+        # make dicts of the row and column options, we need this to translate the row/column numbers into human-readable text
+        row_dict = make_dict_from_json(jsondata, "row")
+        col_dict = make_dict_from_json(jsondata, "column")
+        cells = jsondata["cells"]
+        for cell in cells:
+            row_option = cell["row_option"]
+            col_option = cell["column_option"]
+            #print(f"3: {row_option}, {col_option}, {hasControl}, {isCounty}")
+            # don't bother with anything unless row and column values are set for that cell since we don't want totals
+            if row_option and col_option:
+                if not hasControl:
+                    county_value = ""
+                    if isCounty:
+                        county_value = counties[row_option]
+                    d = make_cell_dict(county_value, "", col_dict["title"], "", col_dict[col_option], cell["count"]["unweighted"], cell["count"]["weighted"], start_year, end_year, year_range)
+                    #print(f"dict: {d}")
+                    results.add(tuple(d.items()))
+                else:
+                    county_value = ""
+                    control_option = cell["control_option"]
+                    if control_option:
+                        county_value = ""
+                        if isCounty:
+                            county_value = counties[control_option]
+                        d = make_cell_dict(county_value, row_dict["title"], col_dict["title"], row_dict[row_option], col_dict[col_option], cell["count"]["unweighted"], cell["count"]["weighted"], start_year, end_year, year_range)
+                        #print(f"dict: {d}")
+                        results.add(tuple(d.items()))
+        print("success")
+    except Exception as err:
+        print(f"parse_data error: error.text: error: {err} ")
+    print("leaving parse_data")
+
+# used for getting keys and titles of rows and columns, works for both state and county data
+def make_dict_from_json(jsondata, key):
+    top_level = jsondata[key]
+    
+    d = dict()
+    d.update({"title": top_level["title"]})
+
+    options = top_level["options"]
+    for option in options:
+        key = option["key"]
+        value = option["title"]
+        d.update({key: value})
+    #print(d)
+    return d
 
 def read_shape_file():
     print(f"in read_shape_file: {shp_path}")
@@ -239,6 +263,59 @@ def read_shape_file():
             print(f"record: {rd['ST_NAME']},{rd['SR_NAME']},{rd['TXNPILA']},{rd['METAMYR']},{rd['PNRNMYR']},{rd['TXNOSPA']},{rd['TXNOSPI']},{rd['TXREC3']},{rd['UDPYILA']},{rd['UDPYILL']},{rd['UDPYPNR']}\n")
             #print(f"record: {rd['ST_NAME']}")
 
+
+# writes the results out to a csv file and returns the results as a DataFrame
+def write_json_to_csv_file(results):
+    print("write_json_to_csv_file")
+    # used a set to store all the results in so it would weed out duplicates.  
+    # Sets can't store dicts, so made the dicts into tuples.  
+    # Now convert tuples back to dicts to write it out.  
+    # There's likely an easier way, but I wrote this as lists/dicts and discovered 
+    # I need to weed out the duplicates later, so this was the quickest way to fix that.
+    list = []
+    for r in results:
+        d = dict(r)
+        list.append(d)
+
+    # write out to csv
+    keys = list[0].keys()
+    #print(f"keys: {keys}")
+    data_file = open(csv_path, 'w', newline='')
+    csv_writer = csv.DictWriter(data_file, fieldnames = keys) 
+    csv_writer.writeheader() 
+    csv_writer.writerows(list) 
+    data_file.close()
+    return pd.DataFrame(list)
+
+def convert_to_db(df):
+    print("Running convert_to_db")
+    try:
+        # create the db connection
+        connection_url = sa.engine.URL.create(
+            drivername=db_driver,
+            username=db_user,
+            password=db_pwd,
+            host=db_host,
+            database=db_name)
+        
+        print(connection_url)
+        engine = create_engine(connection_url)
+
+        # read the data from the csv file, yes, I could have just made a bunch
+        # of dicts and used convertersdict, but the python stuff to myssql is flaky as it is
+        #df = pd.read_csv(csv_path, sep=',', quotechar='\'', encoding='utf8') 
+        
+        # add data to the table
+        df.to_sql(db_table, con=engine, index=False, if_exists='append')
+
+
+        # used this to make sure connection was good, uncomment import text to work
+        #with engine.connect() as conn:
+        #    query = "select count(*) from dbo.TEDS_XWALK_AGE"
+        #    result = conn.execute(text(query))
+    except Error as e:
+        print("Error while connecting", e)
+
 # test method to show what we get back from a given url 
 def print_url_contents(url):
     print(f"print_url_contents: {url}")
@@ -248,122 +325,15 @@ def print_url_contents(url):
         jsondata = json.loads(resp.text)
         print(jsondata)
 
-        
-def write_json_to_csv_file(results):
-    print("write_json_to_csv_file")
-    # used a set to store all the results in so it would weed out duplicates.  
-    # Sets can't store dicts, so made the dicts into tuples.  
-    # Now convert tuples back to dicts to write it out.  
-    # There's likely an easier way, but I wrote this as lists/dicts and discovered 
-    # I need to weed out the duplicates later, so this was the quickest way to fix that.
-    new_results = []
-    for r in results:
-        d = dict(r)
-        new_results.append(d)
+load_state_and_county_data()
+#print_url_contents()
+#read_shape_file()
+#convert_to_db()
 
-    # write out to csv
-    keys = new_results[0].keys()
-    #print(f"keys: {keys}")
-    data_file = open(csv_path, 'w', newline='')
-    csv_writer = csv.DictWriter(data_file, fieldnames = keys) 
-    csv_writer.writeheader() 
-    csv_writer.writerows(new_results) 
-    data_file.close()
-
-
-def makeCellDict(county, row_type, col_type, row_value, col_value, count_unweighted, count_weighted, start_year, end_year, year_range):
-    #return f"'Hawaii', {county}, {row_type}, {col_type}, {row_value}, {col_value}, {count_unweighted}, {count_weighted}"
-    return dict({
-        "state": "Hawaii",
-        "county": county,
-        "row_type": row_type,
-        "col_type": col_type,
-        "row_value": row_value,
-        "col_value": col_value,
-        "count_unweighted": count_unweighted,
-        "count_weighted": count_weighted,
-        "start_year": start_year,
-        "end_year": end_year,
-        "year_range": year_range,
-    })
 
 # after moving control to row, dropping demographics, for throttled results, these still fail:
 # 3, 11, 19, 27
 # all of these use "ABODHER" as the column.  
-#
-# Given jsondata, it loops through all the cells
-# - parses the data for each cell, pulling out what we want
-# - creates a json item for each set, formatting it so all entries will be consistent in spite of original json differences
-# this method is _messy_ as it has to account for the json being formatted differently 
-# if the json was generated from a url with a control param or not.
-# results - storage for all the data I'm parsing out.  Gets modified directly, so there's no return value from this
-# hasControl - True if the jsondata was generated using a url that had a control parameter, 
-#              False if the control was moved to the row param
-def parse_data(isCounty, jsondata, results, hasControl, start_year, end_year, year_range):
-    print(f"in parse_data: hasControl: {hasControl}")
-    try:
-        jsondata = jsondata["results"]
-        # make dicts of the row and column options, we need this to translate the row/column numbers into human-readable text
-        row_dict = make_dict(jsondata, "row")
-        col_dict = make_dict(jsondata, "column")
-        cells = jsondata["cells"]
-        for cell in cells:
-            row_option = cell["row_option"]
-            col_option = cell["column_option"]
-            #print(f"3: {row_option}, {col_option}, {hasControl}, {isCounty}")
-            # don't bother with anything unless row and column values are set for that cell since we don't want totals
-            if row_option and col_option:
-                if not hasControl:
-                    county_value = ""
-                    if isCounty:
-                        county_value = counties[row_option]
-                    d = makeCellDict(county_value, "", col_dict["title"], "", col_dict[col_option], cell["count"]["unweighted"], cell["count"]["weighted"], start_year, end_year, year_range)
-                    #print(f"dict: {d}")
-                    results.add(tuple(d.items()))
-                else:
-                    county_value = ""
-                    control_option = cell["control_option"]
-                    if control_option:
-                        county_value = ""
-                        if isCounty:
-                            county_value = counties[control_option]
-                        d = makeCellDict(county_value, row_dict["title"], col_dict["title"], row_dict[row_option], col_dict[col_option], cell["count"]["unweighted"], cell["count"]["weighted"], start_year, end_year, year_range)
-                        #print(f"dict: {d}")
-                        results.add(tuple(d.items()))
-        print("success")
-    except Exception as err:
-        print(f"parse_data error: error.text: error: {err} ")
-    print("leaving parse_data")
-
-# used for getting keys and titles of rows and columns, works for both state and county data
-def make_dict(jsondata, key):
-    top_level = jsondata[key]
-    
-    d = dict()
-    d.update({"title": top_level["title"]})
-
-    options = top_level["options"]
-    for option in options:
-        key = option["key"]
-        value = option["title"]
-        d.update({key: value})
-    #print(d)
-    return d
-
-
-#load_state_and_county_data()
-#print_url_contents()
-#get_all_nsduh_state([])
-#get_all_nsduh_county([])
-#parse_current_url_data(True, True)
-#parse_current_url_data(False, True)
-
-#parse_current_url_county_data(False)
-#parse_current_url_state_data(False)
-
-read_shape_file()
-
-
 """ 
 # test method which gets data from the current url and calls parse__data
 # make sure current url is the county one, not state one.
@@ -384,3 +354,46 @@ def parse_current_url_data(isCounty, hasControl):
         print(f"resp.reason: {resp.reason}")
         print(f"resp.text: {resp.text}") 
 """
+
+"""
+# this one fails because the column AMIYR_U doesn't exist for this year group
+index: 5, control: STCTYCOD, row: CATAG2, column: AMIYR_U,  filter: STCTYCOD%3D74%2C75%2C76%2C77, weight: DASWT_8
+https://rdas.samhsa.gov/api/surveys/NSDUH-2002-2017-RD16YR/crosstab/?control=STCTYCOD&row=CATAG2&column=AMIYR_U&filter=STCTYCOD%3D74%2C75%2C76%2C77&weight=DASWT_8&run_chisq=false&format=json
+<Response [500]>
+
+# this one fails because the column SMIYR_U doesn't exist for this year group
+index: 6, control: STCTYCOD, row: CATAG2, column: SMIYR_U,  filter: STCTYCOD%3D74%2C75%2C76%2C77, weight: DASWT_8
+https://rdas.samhsa.gov/api/surveys/NSDUH-2002-2017-RD16YR/crosstab/?control=STCTYCOD&row=CATAG2&column=SMIYR_U&filter=STCTYCOD%3D74%2C75%2C76%2C77&weight=DASWT_8&run_chisq=false&format=json
+<Response [500]>
+"""
+
+"""
+def convert_to_db():
+    print("Running convert_to_db")
+    try:
+        # create the db connection
+        connection_url = sa.engine.URL.create(
+            drivername=db_driver,
+            username=db_user,
+            password=db_pwd,
+            host=db_host,
+            database=db_name)
+        
+        print(connection_url)
+        engine = create_engine(connection_url)
+
+        # read the data from the csv file, yes, I could have just made a bunch
+        # of dicts and used convertersdict, but the python stuff to myssql is flaky as it is
+        df = pd.read_csv(csv_path, sep=',', quotechar='\'', encoding='utf8') 
+        
+        # add data to the table
+        df.to_sql(db_table, con=engine, index=False, if_exists='append')
+
+        # used this to make sure connection was good, uncomment import text to work
+        #with engine.connect() as conn:
+        #    query = "select count(*) from dbo.TEDS_XWALK_AGE"
+        #    result = conn.execute(text(query))
+    except Error as e:
+        print("Error while connecting", e)
+"""
+#combined_data.to_csv(fullFilePath, index=False)
