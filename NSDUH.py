@@ -43,7 +43,7 @@ shp_file = "ShapeFile2018/SubstateRegionData161718.shp"
 shp_path = dir + shp_file
 json_file_in = "temp.json"
 json_path = dir + json_file_in
-csv_file = "nsduh.csv"
+csv_file = "nsduh2.csv"
 csv_path = dir + csv_file
 
 """
@@ -96,7 +96,7 @@ def load_state_and_county_data():
     get_nsduh_data(True, results) # county
     get_nsduh_data(False, results) # state
     df = write_json_to_csv_file(results)
-    convert_to_db(df)
+    write_data_frame_to_db(df)
 
 # used in get_nsduh_data to generate a url using the given arguments and return the response from doing a get on that url
 def get_url_data(index, base_url, control, row, column, filter, weight):
@@ -276,19 +276,12 @@ def write_json_to_csv_file(results):
     for r in results:
         d = dict(r)
         list.append(d)
+    df = pd.DataFrame(list)
+    df.to_csv(csv_path, index=False)
+    return df
 
-    # write out to csv
-    keys = list[0].keys()
-    #print(f"keys: {keys}")
-    data_file = open(csv_path, 'w', newline='')
-    csv_writer = csv.DictWriter(data_file, fieldnames = keys) 
-    csv_writer.writeheader() 
-    csv_writer.writerows(list) 
-    data_file.close()
-    return pd.DataFrame(list)
-
-def convert_to_db(df):
-    print("Running convert_to_db")
+def make_db_connection():
+    print("Running make_db_connection")
     try:
         # create the db connection
         connection_url = sa.engine.URL.create(
@@ -301,20 +294,38 @@ def convert_to_db(df):
         print(connection_url)
         engine = create_engine(connection_url)
 
-        # read the data from the csv file, yes, I could have just made a bunch
-        # of dicts and used convertersdict, but the python stuff to myssql is flaky as it is
-        #df = pd.read_csv(csv_path, sep=',', quotechar='\'', encoding='utf8') 
-        
-        # add data to the table
-        df.to_sql(db_table, con=engine, index=False, if_exists='append')
-
-
         # used this to make sure connection was good, uncomment import text to work
         #with engine.connect() as conn:
         #    query = "select count(*) from dbo.TEDS_XWALK_AGE"
         #    result = conn.execute(text(query))
+        return engine
+    except Error as e:
+        print("Error while connecting", e) 
+
+def read_csv_write_to_db():
+    print("Running read_csv_write_to_db")
+    try:
+        engine = make_db_connection()
+        # get data from the csv file
+        df = pd.read_csv(csv_path, sep=',', quotechar='\'', encoding='utf8') 
+        # add data to the table
+        df.to_sql(db_table, con=engine, index=False, if_exists='fail')
     except Error as e:
         print("Error while connecting", e)
+    # state:
+    # county: 1096
+    # total: 1800
+
+def write_data_frame_to_db(df):
+    print("Running write_data_frame_to_db")
+    try:
+        engine = make_db_connection()
+        df.to_sql(db_table, con=engine, index=False, if_exists='fail')
+    except Error as e:
+        print("Error while connecting", e)
+    # state:
+    # county: 1096
+    # total: 1800
 
 # test method to show what we get back from a given url 
 def print_url_contents(url):
@@ -328,8 +339,11 @@ def print_url_contents(url):
 load_state_and_county_data()
 #print_url_contents()
 #read_shape_file()
-#convert_to_db()
+#write_data_frame_to_db()
 
+
+
+# -------------------------
 
 # after moving control to row, dropping demographics, for throttled results, these still fail:
 # 3, 11, 19, 27
