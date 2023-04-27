@@ -1,15 +1,22 @@
-
 import os
 import pandas as pd
 import pdb
 import re
-import requests as req
+import requests as req # pip install requests
 import json
-import geopandas as gpd
+import geopandas as gpd # pip install geopandas
 import csv
-import shapefile
-#import pyodbc
+import shapefile # pip install pyshp
 
+import pyodbc # pip install pyodbc
+import mysql.connector as msql
+from mysql.connector import Error
+import sqlalchemy as sa 
+# pip install sqlalchemy_pyodbc_mssql
+# pip install sqlalchemy-access
+from sqlalchemy import create_engine
+#from sqlalchemy import text
+#from sqlalchemy import create_engine, types
 
 # when I installed #pip-system-certs, everything else broke with 
 # SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED], 
@@ -23,28 +30,29 @@ import shapefile
 # - record all the year/variable combos that cause 500 errors and print them out at the end so we can verify and maybe change the variables
 
 
-import mysql.connector as msql
-from mysql.connector import Error
-import sqlalchemy as sa
-from sqlalchemy import create_engine
-#from sqlalchemy import text
-#from sqlalchemy import create_engine, types
-
 # fields you will need to edit before running this
-db_driver = "mysql+pymysql"
+
+
+# check in version:
+is_mssql = False
+db_driver = "<Your driver here>"
 db_host = '<Your database host here>'
 db_name = '<Your database name here>'
 db_table = '<Your table name here>'
 db_user = "<Your Username Here>"
 db_pwd = "<Your Password Here>"
+query_d = {}
+dir = "<path to csv file>"
 
-dir = "/Users/jgeis/Work/DOH/NSDUH-Processing/data_files/"
+
+pyodbc.pooling = False
+
 shp_file = "ShapeFile2018/SubstateRegionData161718.shp"
-shp_path = dir + shp_file
+shp_path = f"{dir}{shp_file}"
 json_file_in = "temp.json"
-json_path = dir + json_file_in
-csv_file = "nsduh2.csv"
-csv_path = dir + csv_file
+json_path = f"{dir}{json_file_in}"
+csv_file = "nsduh.csv"
+csv_path = f"{dir}{csv_file}"
 
 """
 rows (AKA demographics):
@@ -266,7 +274,7 @@ def read_shape_file():
 
 # writes the results out to a csv file and returns the results as a DataFrame
 def write_json_to_csv_file(results):
-    print("write_json_to_csv_file")
+    print(f"write_json_to_csv_file: {csv_path}")
     # used a set to store all the results in so it would weed out duplicates.  
     # Sets can't store dicts, so made the dicts into tuples.  
     # Now convert tuples back to dicts to write it out.  
@@ -277,23 +285,42 @@ def write_json_to_csv_file(results):
         d = dict(r)
         list.append(d)
     df = pd.DataFrame(list)
-    df.to_csv(csv_path, index=False)
+    try:
+        df.to_csv(csv_path, index=False)
+    except Error as e:
+        print("Error while writing", e) 
     return df
 
 def make_db_connection():
     print("Running make_db_connection")
     try:
+        connection_url = ""
         # create the db connection
-        connection_url = sa.engine.URL.create(
-            drivername=db_driver,
-            username=db_user,
-            password=db_pwd,
-            host=db_host,
-            database=db_name)
+        # this works for mysql, not mssql
+        if is_mssql:
+            connection_url = sa.engine.URL.create(
+                drivername=db_driver,
+                username=db_user,
+                password=db_pwd,
+                host=db_host,
+                port=1433,
+                database=db_name,
+                query=query_d)
+        else:
+            connection_url = sa.engine.URL.create(
+                drivername=db_driver,
+                username=db_user,
+                password=db_pwd,
+                host=db_host,
+                database=db_name)
         
+        #driver = "ODBC+Driver+18+for+SQL+Server"
+        #connection_url = f"{db_driver}://{db_user}:doh_AMHD%402022%21@{db_host}:1433/{db_name}?driver={driver}"
+
+
         print(connection_url)
         engine = create_engine(connection_url)
-
+        print(f"returning connection: {connection_url}")
         # used this to make sure connection was good, uncomment import text to work
         #with engine.connect() as conn:
         #    query = "select count(*) from dbo.TEDS_XWALK_AGE"
@@ -302,25 +329,40 @@ def make_db_connection():
     except Error as e:
         print("Error while connecting", e) 
 
+# read from the csv file and write it to the database
 def read_csv_write_to_db():
     print("Running read_csv_write_to_db")
     try:
+        df = pd.read_csv(csv_path, sep=',', quotechar='\'', encoding='utf8') 
+        write_data_frame_to_db(df)
+        """
         engine = make_db_connection()
         # get data from the csv file
         df = pd.read_csv(csv_path, sep=',', quotechar='\'', encoding='utf8') 
+
         # add data to the table
-        df.to_sql(db_table, con=engine, index=False, if_exists='fail')
+        if is_mssql:
+            df.to_sql(db_table, schema="dbo", con=engine, index=False, if_exists='fail')
+        else:
+            df.to_sql(db_table, con=engine, index=False, if_exists='fail')
+        """
     except Error as e:
         print("Error while connecting", e)
     # state:
     # county: 1096
     # total: 1800
 
+# write the data we just got off the samhsa site directly to the database
 def write_data_frame_to_db(df):
     print("Running write_data_frame_to_db")
     try:
         engine = make_db_connection()
-        df.to_sql(db_table, con=engine, index=False, if_exists='fail')
+        # add data to the table
+        if is_mssql:
+            df.to_sql(db_table, schema="dbo", con=engine, index=False, if_exists='fail')
+        else:
+            df.to_sql(db_table, con=engine, index=False, if_exists='fail')
+
     except Error as e:
         print("Error while connecting", e)
     # state:
@@ -336,12 +378,12 @@ def print_url_contents(url):
         jsondata = json.loads(resp.text)
         print(jsondata)
 
-load_state_and_county_data()
+
+#load_state_and_county_data()
 #print_url_contents()
 #read_shape_file()
 #write_data_frame_to_db()
-
-
+read_csv_write_to_db()
 
 # -------------------------
 
@@ -411,3 +453,62 @@ def convert_to_db():
         print("Error while connecting", e)
 """
 #combined_data.to_csv(fullFilePath, index=False)
+
+"""
+def read_csv_write_to_mssql_db():
+    print("Running read_csv_write_to_db")
+    # f"{db_driver}://{db_host}/{db_name}?driver=SQL Server Native Client 11.0?trusted_connection=yes?UID={db_user}?PWD={db_pwd}"
+    # this worked, I think, at least it didn't give errors
+    conn = pyodbc.connect("DRIVER={ODBC Driver 18 for SQL Server};"
+                      f"SERVER=tcp:{db_host},1433;"
+                      f"DATABASE={db_name}; UID={db_user}; PWD={db_pwd};")
+    cursor = conn.cursor()
+
+    #cursor.execute('''drop table if exists dbo.NSDUH_Jen''')
+
+    # Create Table
+    cursor.execute('''
+        CREATE TABLE dbo.NSDUH_Jen (
+                state VARCHAR(max) NULL,
+                county VARCHAR(max) NULL,
+                row_type VARCHAR(max) NULL,
+                col_type VARCHAR(max) NULL,
+                row_value VARCHAR(max) NULL,
+                col_value VARCHAR(max) NULL,
+                count_unweighted VARCHAR(max) NULL,
+                count_weighted VARCHAR(max) NULL,
+                start_year BIGINT NULL,
+                end_year BIGINT NULL,
+                year_range VARCHAR(max) NULL
+        )
+    ''')
+
+    # Insert DataFrame to Table
+    data = pd.read_csv(csv_path, sep=',', quotechar='\'', encoding='utf8') 
+    df = pd.DataFrame(data)
+
+    for row in df.itertuples():
+        cursor.execute('''
+                        INSERT INTO dbo.NSDUH_Jen (state, county, row_type, col_type, row_value, col_value, count_unweighted, count_weighted, start_year, end_year, year_range)
+                        VALUES (?,?,?,?,?,?,?,?,?,?,?)''',
+                        row.state, 
+                        row.county, 
+                        row.row_type, 
+                        row.col_type, 
+                        row.row_value, 
+                        row.col_value, 
+                        row.count_unweighted, 
+                        row.count_weighted, 
+                        row.start_year, 
+                        row.end_year, 
+                        row.year_range
+                    )
+    conn.commit()
+"""
+"""
+    pyodbc.ProgrammingError: ('42000', '[42000] [Microsoft][ODBC Driver 18 for SQL Server][SQL Server]
+    The incoming tabular data stream (TDS) remote procedure call (RPC) protocol stream is incorrect. 
+    Parameter 5 (""): The supplied value is not a valid instance of data type float. 
+    Check the source data for invalid values. An example of an invalid value is data of numeric type 
+    with scale greater than precision. (8023) (SQLExecDirectW)')
+"""
