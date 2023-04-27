@@ -18,20 +18,23 @@ from sqlalchemy import create_engine
 #from sqlalchemy import text
 #from sqlalchemy import create_engine, types
 
+import io
+import zipfile
+import urllib
+import ssl
+
+
 # when I installed #pip-system-certs, everything else broke with 
 # SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED], 
 # I uninstalled it and everything worked again
 # unfortunately, this means I can't load shapefiles by url
 
 # TODO:
-# - fix csv to mssql issue
 # - figure out how to incorporate shapefile data
 # - add key to db table so duplicates aren't inserted
 # - record all the year/variable combos that cause 500 errors and print them out at the end so we can verify and maybe change the variables
 
-
 # fields you will need to edit before running this
-
 
 # check in version:
 is_mssql = False
@@ -46,6 +49,8 @@ dir = "<path to csv file>"
 
 
 pyodbc.pooling = False
+ssl._create_default_https_context = ssl._create_unverified_context
+
 
 shp_file = "ShapeFile2018/SubstateRegionData161718.shp"
 shp_path = f"{dir}{shp_file}"
@@ -167,7 +172,7 @@ def get_nsduh_data(isCounty, results):
     print(f"leaving get_nsduh_data")
 
 # called by parse_data to generate a dict using all the given parameters.
-# kinda brain-dead, but I wanted to make sure if one got changed, the both got changed, and this would assure that.
+# kinda brain-dead, but I wanted to make sure if one got changed, they both got changed, and this would assure that.
 def make_cell_dict(county, row_type, col_type, row_value, col_value, count_unweighted, count_weighted, start_year, end_year, year_range):
     #return f"'Hawaii', {county}, {row_type}, {col_type}, {row_value}, {col_value}, {count_unweighted}, {count_weighted}"
     return dict({
@@ -254,10 +259,129 @@ def read_shape_file():
     #print(df_hawaii.columns)
     #print(df_hawaii.head())
 
-    sf = shapefile.Reader(shp_path)
-    #shapefile_url = "https://www.samhsa.gov/data/sites/default/files/reports/rpt29384/NSDUHsubstateShapeFile2018/ShapeFile2018.zip"
+    #sf = shapefile.Reader(shp_path)
+    shapefile_url = "https://www.samhsa.gov/data/sites/default/files/reports/rpt29384/NSDUHsubstateShapeFile2018/ShapeFile2018.zip"
     #sf = shapefile.Reader(shapefile_url, verify = "False")
+   
 
+
+
+    # the actual shapefile
+    #shapefile_url = "https://www.samhsa.gov/data/sites/default/files/reports/rpt29384/NSDUHsubstateShapeFile2018/ShapeFile2018.zip"
+    # page the link is found on:
+    # https://www.samhsa.gov/data/report/2016-2018-nsduh-substate-region-shapefile
+    #sf = shapefile.Reader(shapefile_url, verify = "False")
+    # other years, for some, you need to click on the htm link and then click on the download link on that page.  Not consistent.
+    # first link is main page, second link is the zip file, third is the population table (Table C1).  
+    # Table C1 is found under "Other Related Reports" tab with label saying something like 
+    # "NSDUH Guide to Substate Tables and Summary of Small Area Estimation Methodology"
+    # or "NSDUH Overview and Summary of Substate Region Estimation Methodology"
+    # Found all these via a search: https://www.samhsa.gov/data/all-reports?f%5B0%5D=location%3A182&keys=shapefile&sort_bef_combine=field_date_printed_on_report_DESC
+    # 2010-2012
+    # https://www.samhsa.gov/data/report/2010-2012-nsduh-substate-region-shapefile-zip-file-download
+    # https://www.samhsa.gov/data/sites/default/files/NSDUHsubstateShapeFile2012/NSDUHsubstateShapeFile2012.zip
+    # https://www.samhsa.gov/data/sites/default/files/substate2k12-Methodology/NSDUHsubstateMethodology2012.htm#tabc1
+    # 2012-2014
+    # https://www.samhsa.gov/data/report/2012-2014-nsduh-substate-region-shapefile
+    # https://www.samhsa.gov/data/sites/default/files/NSDUHsubstateShapeFile2014/NSDUHsubstateShapeFile2014.zip
+    # https://www.samhsa.gov/data/sites/default/files/NSDUHsubstateMethodology2014/NSDUHsubstateMethodology2014.htm#tabc1
+    # 2014-2016
+    # https://www.samhsa.gov/data/report/2014-2016-nsduh-substate-region-shapefile
+    # https://www.samhsa.gov/data/sites/default/files/cbhsq-reports/NSDUHsubstateShapeFile2016/ShapeFile2016.zip
+    # https://www.samhsa.gov/data/sites/default/files/cbhsq-reports/NSDUHsubstateMethodology2016/NSDUHsubstateMethodology2016.htm#tabc1
+    # 2016-2018
+    # https://www.samhsa.gov/data/report/2016-2018-nsduh-substate-region-shapefile
+    # https://www.samhsa.gov/data/sites/default/files/reports/rpt29384/NSDUHsubstateShapeFile2018/ShapeFile2018.zip
+    # https://www.samhsa.gov/data/sites/default/files/reports/rpt29372/NSDUHsubstateMethodology2018_0/NSDUHsubstateMethodology2018.htm#tabc1
+    # 2018-2020: data not available, see https://www.samhsa.gov/data/report/2018-2020-nsduh-substate-region-shapefile for details
+    #
+    # the number given is the prevalence rate, which is a percentage.  Need to multiply that by population
+    # ex: 56,197 * (6.5/100) =  3,652 = count of TXNPILA for Kauai in 2016-2018
+
+    """
+    2010-2012
+    Hawaii State: 1,123,500
+    Hawaii Island: 152,588
+    Honolulu: 787,623
+    Kauai: 55,634
+    Maui: 127,655
+
+    2012-2014
+    Hawaii State: 1,145,942
+    Hawaii Island: 154,193
+    Honolulu: 806,141
+    Kauai: 56,012
+    Maui: 129,596
+
+    2014-2016
+    Hawaii State: 1,162,034
+    Hawaii Island: 155,455
+    Honolulu: 818,697
+    Kauai: 56,499
+    Maui: 131,383
+
+    2016-2018
+    Hawaii State: 1,160,319
+    Hawaii Island: 154,486
+    Honolulu: 818,512
+    Kauai: 56,197
+    Maui: 131,124
+    """
+
+    shapefile_years = [{"url":"https://www.samhsa.gov/data/sites/default/files/reports/rpt29384/NSDUHsubstateShapeFile2018/ShapeFile2018.zip","year_range":"2016-2018","start_year":"2016","end_year":"2018","num_years":"2","state_pop":"1,160,319","Hawaii Island":"154486","Honolulu":"818512","Kauai":"56197","Maui":"131124"},
+                       {"url":"https://www.samhsa.gov/data/sites/default/files/cbhsq-reports/NSDUHsubstateShapeFile2016/ShapeFile2016.zip","year_range":"2014-2016","start_year":"2014","end_year":"2016","num_years":"2","state_pop":"1,162,034","Hawaii Island":"155455","Honolulu":"818697","Kauai":"56499","Maui":"131383"},
+                       {"url":"https://www.samhsa.gov/data/sites/default/files/NSDUHsubstateShapeFile2014/NSDUHsubstateShapeFile2014.zip","year_range":"2012-2014","start_year":"2012","end_year":"2014","num_years":"2","state_pop":"1,145,942","Hawaii Island":"154193","Honolulu":"806141","Kauai":"56012","Maui":"129596"},
+                       {"url":"https://www.samhsa.gov/data/sites/default/files/NSDUHsubstateShapeFile2012/NSDUHsubstateShapeFile2012.zip","year_range":"2010-2012","start_year":"2010","end_year":"2012","num_years":"2","state_pop":"1,123,500","Hawaii Island":"152588","Honolulu":"787623","Kauai":"55634","Maui":"127655"}]
+    shapefile_variables = [{"variable":"TXNPILA","row_value":"12 or older","description":"txnpila: needing but not receiving treatment at a specialty facility for substance use in the past year"},
+                           {"variable":"METAMYR","row_value":"12 or older","description":"metamyr: methamphetamine use in the past year"},
+                           {"variable":"PNRNMYR","row_value":"12 or older","description":"pnrnmyr: pain reliever misuse in the past year"},
+                           {"variable":"TXNOSPA","row_value":"12 or older","description":"txnospa: needing but not receiving treatment at a specialty facility for alcohol use in the past year"},
+                           {"variable":"TXNOSPI","row_value":"12 or older","description":"txnospi: needing but not receiving treatment at a specialty facility for illicit drug use in the past year"},
+                           {"variable":"TXREC3","row_value":"18 or older","description":"txrec3: received mental health services in the past year "},
+                           {"variable":"UDPYILA","row_value":"12 or older","description":"udpyila: substance use disorder in the past year"},
+                           {"variable":"UDPYILL","row_value":"12 or older","description":"udpyill: illicit drug use disorder in the past year"},
+                           {"variable":"UDPYPNR","row_value":"12 or older","description":"udpypnr: pain reliever use disorder in the past year "}]
+    
+
+    for year in shapefile_years:
+        print(f"\n\nyear: {year}, url: {year['url']}")
+        sf = shapefile.Reader(year['url'], verify = "False")
+        #print(sf.fields)
+        rec = sf.records()
+        #print(rec)
+        #print(rec["Record #"])
+        #print(rec[1].as_dict())
+        for r in rec:
+            rd = r.as_dict()
+            if rd["ST_NAME"] == "Hawaii":
+                print(f"\n\nrecord: {rd}\n")
+                for var in shapefile_variables:
+                    try:
+                        #print(f"record1: {rd}\n")
+                        #print(f"record: {rd['ST_NAME']}")
+                        #print(f"record: {rd['ST_NAME']},{rd['SR_NAME']},tx: {rd['TXNPILA']},{rd['METAMYR']},{rd['PNRNMYR']},{rd['TXNOSPA']},{rd['TXNOSPI']},{rd['TXREC3']},{rd['UDPYILA']},{rd['UDPYILL']},{rd['UDPYPNR']}\n")
+                        var_key = var['variable']
+                        if var_key in rd:
+                            #print(f"rd[var_key]: {rd[var_key]}, rd['SR_NAME']: {rd['SR_NAME']}, year[rd['SR_NAME']]: {year[rd['SR_NAME']]}")
+                            var_val = rd[var_key]
+                            population = float(year[rd['SR_NAME']])
+                            count = round(var_val * population / 100)
+
+                            print(f"county: {rd['SR_NAME']}, var: {var_key}, val: {count}")
+                            # if no match, change to lower case and try again
+                        elif var_key.lower() in rd:
+                            var_key = var_key.lower()
+                            var_val = rd[var_key]
+                            population = float(year[rd['SR_NAME']])
+                            count = round(var_val * population / 100)
+                            print(f"county: {rd['SR_NAME']}, var: {var_key}, val: {count}")
+
+
+                    except Error as e:
+                        print("Error: ", e) 
+    """
+    sf = shapefile.Reader(shapefile_url, verify = "False")
+    #sf = shapefile.Reader(shp_path)
     print(sf.fields)
     rec = sf.records()
     #print(rec)
@@ -266,10 +390,36 @@ def read_shape_file():
     for r in rec:
         rd = r.as_dict()
         if rd["ST_NAME"] == "Hawaii":
-            #print(f"record: {rd}\n")
+            print(f"record1: {rd}\n")
             #print(rd["TXNPILA"])
             print(f"record: {rd['ST_NAME']},{rd['SR_NAME']},{rd['TXNPILA']},{rd['METAMYR']},{rd['PNRNMYR']},{rd['TXNOSPA']},{rd['TXNOSPI']},{rd['TXREC3']},{rd['UDPYILA']},{rd['UDPYILL']},{rd['UDPYPNR']}\n")
             #print(f"record: {rd['ST_NAME']}")
+    """
+    """
+        return dict({
+        "state": f"{rd['ST_NAME']}",
+        "county": f"{rd['SR_NAME']}",
+        "row_type": "Age Range",
+        "col_type": col_type,
+        "row_value": row_value,
+        "col_value": "1 - Yes",
+        "count_unweighted": NULL,
+        "count_weighted": count_weighted,
+        "start_year": "2016",
+        "end_year": "2018",
+        "year_range": "2016-2018"
+    })
+
+    +--------+--------------+-----------------------------------+----------------------------------------------+-----------------+----------------+------------------+----------------+------------+----------+------------+
+    | state  | county       | row_type                          | col_type                                     | row_value       | col_value      | count_unweighted | count_weighted | start_year | end_year | year_range |
+    +--------+--------------+-----------------------------------+----------------------------------------------+-----------------+----------------+------------------+----------------+------------+----------+------------+
+    | Hawaii | Maui County  | RC-AGE CATEGORY RECODE (3 LEVELS) | RC-MARIJUANA DEPENDENCE OR ABUSE - PAST YEAR | 3 - 26 or Older | 0 - No/Unknown |             NULL |         114000 |       2010 |     2019 | 2010-2019  |
+    | Hawaii | NULL         | IMPUTATION REVISED GENDER         | RCVD ANY MENTAL HEALTH TRT IN PST YR         | 2 - Female      | 1 - Yes        |             NULL |          56000 |       2004 |     2005 | 2004-2005  |
+    | Hawaii | NULL         | AGE CATEGORY RECODE (3 LEVELS)    | MARIJUANA ABUSE OR DEPENDENCE - PAST YEAR    | 3 - 26 or Older | 1 - Yes        |             NULL |           9000 |       2002 |     2003 | 2002-2003  |
+    | Hawaii | Kauai County | RC-AGE CATEGORY RECODE (3 LEVELS) | RC-MARIJUANA DEPENDENCE OR ABUSE - PAST YEAR | 3 - 26 or Older | 1 - Yes        |             NULL |           1000 |       2010 |     2019 | 2010-2019  |
+    | Hawaii | NULL         | RC-AGE CATEGORY RECODE (5 LEVELS) | RC-ALCOHOL DEPENDENCE OR ABUSE - PAST YEAR   | 5 - 50 or Older | 0 - No/Unknown |             NULL |         504000 |       2016 |     2017 | 2016-2017  |
+    +--------+--------------+-----------------------------------+----------------------------------------------+-----------------+----------------+------------------+----------------+------------+----------+------------+
+    """
 
 
 # writes the results out to a csv file and returns the results as a DataFrame
@@ -296,7 +446,7 @@ def make_db_connection():
     try:
         connection_url = ""
         # create the db connection
-        # this works for mysql, not mssql
+        # this works for mssql, not mysql
         if is_mssql:
             connection_url = sa.engine.URL.create(
                 drivername=db_driver,
@@ -306,6 +456,7 @@ def make_db_connection():
                 port=1433,
                 database=db_name,
                 query=query_d)
+        # this works for mysql, not mssql
         else:
             connection_url = sa.engine.URL.create(
                 drivername=db_driver,
@@ -313,10 +464,6 @@ def make_db_connection():
                 password=db_pwd,
                 host=db_host,
                 database=db_name)
-        
-        #driver = "ODBC+Driver+18+for+SQL+Server"
-        #connection_url = f"{db_driver}://{db_user}:doh_AMHD%402022%21@{db_host}:1433/{db_name}?driver={driver}"
-
 
         print(connection_url)
         engine = create_engine(connection_url)
@@ -335,17 +482,6 @@ def read_csv_write_to_db():
     try:
         df = pd.read_csv(csv_path, sep=',', quotechar='\'', encoding='utf8') 
         write_data_frame_to_db(df)
-        """
-        engine = make_db_connection()
-        # get data from the csv file
-        df = pd.read_csv(csv_path, sep=',', quotechar='\'', encoding='utf8') 
-
-        # add data to the table
-        if is_mssql:
-            df.to_sql(db_table, schema="dbo", con=engine, index=False, if_exists='fail')
-        else:
-            df.to_sql(db_table, con=engine, index=False, if_exists='fail')
-        """
     except Error as e:
         print("Error while connecting", e)
     # state:
@@ -362,7 +498,6 @@ def write_data_frame_to_db(df):
             df.to_sql(db_table, schema="dbo", con=engine, index=False, if_exists='fail')
         else:
             df.to_sql(db_table, con=engine, index=False, if_exists='fail')
-
     except Error as e:
         print("Error while connecting", e)
     # state:
@@ -381,9 +516,9 @@ def print_url_contents(url):
 
 #load_state_and_county_data()
 #print_url_contents()
-#read_shape_file()
+read_shape_file()
 #write_data_frame_to_db()
-read_csv_write_to_db()
+#read_csv_write_to_db()
 
 # -------------------------
 
@@ -424,91 +559,25 @@ https://rdas.samhsa.gov/api/surveys/NSDUH-2002-2017-RD16YR/crosstab/?control=STC
 """
 
 """
-def convert_to_db():
-    print("Running convert_to_db")
-    try:
-        # create the db connection
-        connection_url = sa.engine.URL.create(
-            drivername=db_driver,
-            username=db_user,
-            password=db_pwd,
-            host=db_host,
-            database=db_name)
-        
-        print(connection_url)
-        engine = create_engine(connection_url)
-
-        # read the data from the csv file, yes, I could have just made a bunch
-        # of dicts and used convertersdict, but the python stuff to myssql is flaky as it is
-        df = pd.read_csv(csv_path, sep=',', quotechar='\'', encoding='utf8') 
-        
-        # add data to the table
-        df.to_sql(db_table, con=engine, index=False, if_exists='append')
-
-        # used this to make sure connection was good, uncomment import text to work
-        #with engine.connect() as conn:
-        #    query = "select count(*) from dbo.TEDS_XWALK_AGE"
-        #    result = conn.execute(text(query))
-    except Error as e:
-        print("Error while connecting", e)
-"""
-#combined_data.to_csv(fullFilePath, index=False)
-
-"""
-def read_csv_write_to_mssql_db():
-    print("Running read_csv_write_to_db")
-    # f"{db_driver}://{db_host}/{db_name}?driver=SQL Server Native Client 11.0?trusted_connection=yes?UID={db_user}?PWD={db_pwd}"
-    # this worked, I think, at least it didn't give errors
-    conn = pyodbc.connect("DRIVER={ODBC Driver 18 for SQL Server};"
-                      f"SERVER=tcp:{db_host},1433;"
-                      f"DATABASE={db_name}; UID={db_user}; PWD={db_pwd};")
-    cursor = conn.cursor()
-
-    #cursor.execute('''drop table if exists dbo.NSDUH_Jen''')
-
-    # Create Table
-    cursor.execute('''
-        CREATE TABLE dbo.NSDUH_Jen (
-                state VARCHAR(max) NULL,
-                county VARCHAR(max) NULL,
-                row_type VARCHAR(max) NULL,
-                col_type VARCHAR(max) NULL,
-                row_value VARCHAR(max) NULL,
-                col_value VARCHAR(max) NULL,
-                count_unweighted VARCHAR(max) NULL,
-                count_weighted VARCHAR(max) NULL,
-                start_year BIGINT NULL,
-                end_year BIGINT NULL,
-                year_range VARCHAR(max) NULL
-        )
-    ''')
-
-    # Insert DataFrame to Table
-    data = pd.read_csv(csv_path, sep=',', quotechar='\'', encoding='utf8') 
-    df = pd.DataFrame(data)
-
-    for row in df.itertuples():
-        cursor.execute('''
-                        INSERT INTO dbo.NSDUH_Jen (state, county, row_type, col_type, row_value, col_value, count_unweighted, count_weighted, start_year, end_year, year_range)
-                        VALUES (?,?,?,?,?,?,?,?,?,?,?)''',
-                        row.state, 
-                        row.county, 
-                        row.row_type, 
-                        row.col_type, 
-                        row.row_value, 
-                        row.col_value, 
-                        row.count_unweighted, 
-                        row.count_weighted, 
-                        row.start_year, 
-                        row.end_year, 
-                        row.year_range
-                    )
-    conn.commit()
+zip_buffer = io.BytesIO()
+with zipfile.ZipFile(zip_buffer, "a",
+                    zipfile.ZIP_DEFLATED, False) as zip_file:
+    for file_name, data in [('1.txt', io.BytesIO(b'111')),
+                            ('2.txt', io.BytesIO(b'222'))]:
+        zip_file.writestr(file_name, data.getvalue())
+with open('C:/1.zip', 'wb') as f:
+    f.write(zip_buffer.getvalue())
 """
 """
-    pyodbc.ProgrammingError: ('42000', '[42000] [Microsoft][ODBC Driver 18 for SQL Server][SQL Server]
-    The incoming tabular data stream (TDS) remote procedure call (RPC) protocol stream is incorrect. 
-    Parameter 5 (""): The supplied value is not a valid instance of data type float. 
-    Check the source data for invalid values. An example of an invalid value is data of numeric type 
-    with scale greater than precision. (8023) (SQLExecDirectW)')
+open_zip = zipfile.ZipFile(io.BytesIO(urllib.request.urlopen(shapefile_url).read()))
+
+print("Done")
+#filename = [y for y in sorted(open_zip.namelist()) for ending in ['shp'] if y.endswith(ending)] 
+#print(filename)
+#shp_file = io.StringIO(zipfile.ZipFile.read(filename[0]))
+
+filenames = [y for y in sorted(open_zip.namelist()) for ending in ['dbf', 'prj', 'shp', 'shx'] if y.endswith(ending)] 
+print(filenames)
+dbf, prj, shp, shx = [io.StringIO(zipfile.ZipFile.read(filename)) for filename in filenames]
+r = shapefile.Reader(shp=shp, shx=shx, dbf=dbf)
 """
