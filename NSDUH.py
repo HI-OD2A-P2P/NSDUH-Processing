@@ -24,15 +24,18 @@ import urllib
 import ssl
 
 
-# when I installed #pip-system-certs, everything else broke with 
-# SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED], 
-# I uninstalled it and everything worked again
-# unfortunately, this means I can't load shapefiles by url
-
 # TODO:
 # - figure out how to incorporate shapefile data
 # - add key to db table so duplicates aren't inserted
 # - record all the year/variable combos that cause 500 errors and print them out at the end so we can verify and maybe change the variables
+# - strip off things like "1 - " at the start of each row_value
+# - change NULLs to empty strings?
+
+# Done:
+# - drop count_unweighted column, it's only value is null
+# - rename count_weighted to just count
+# - strip out col_value results of "no/unknown", only want positives, not negatives eg: (0 - No/Unknown, 2 - No, 0 - No Past Year SMI, 0 - No Past Yr Any Mental Illness, 0 - No)       
+# - once we only have positive col_values, we can ditch the column entirely
 
 # fields you will need to edit before running this
 
@@ -51,11 +54,6 @@ dir = "<path to csv file>"
 pyodbc.pooling = False
 ssl._create_default_https_context = ssl._create_unverified_context
 
-
-shp_file = "ShapeFile2018/SubstateRegionData161718.shp"
-shp_path = f"{dir}{shp_file}"
-json_file_in = "temp.json"
-json_path = f"{dir}{json_file_in}"
 csv_file = "nsduh.csv"
 csv_path = f"{dir}{csv_file}"
 
@@ -91,12 +89,43 @@ state_years = [{"url_term":"NSDUH-2018-2019-RD02YR","year_range":"2018-2019","st
                {"url_term":"NSDUH-2004-2005-RD02YR","year_range":"2004-2005","start_year":"2004","end_year":"2005", "num_years":"2", "weight":"DASWT_1", "control":"STNAME","filter":"STNAME%3DHAWAII"},
                {"url_term":"NSDUH-2002-2003-RD02YR","year_range":"2002-2003","start_year":"2002","end_year":"2003", "num_years":"2", "weight":"DASWT_1", "control":"STNAME","filter":"STNAME%3DHAWAII"}]
 
+"""
 county_years = [{"url_term":"NSDUH-2010-2019-RD10YR","year_range":"2010-2019","start_year":"2010","end_year":"2019", "num_years":"10", "weight":"DASWT_4", "control":"STCTYCOD2","filter":"STCTYCOD2%3D85%2C83%2C84%2C82"},
                 {"url_term":"NSDUH-2002-2017-RD16YR","year_range":"2002-2017","start_year":"2002","end_year":"2017", "num_years":"16", "weight":"DASWT_8", "control":"STCTYCOD","filter":"STCTYCOD%3D74%2C75%2C76%2C77"},
                 {"url_term":"NSDUH-2002-2016-RD15YR","year_range":"2002-2016","start_year":"2002","end_year":"2016", "num_years":"15", "weight":"DASWT_7", "control":"STCTYCOD","filter":"STCTYCOD%3D74%2C75%2C76%2C77"},
                 {"url_term":"NSDUH-2002-2015-RD14YR","year_range":"2002-2015","start_year":"2002","end_year":"2015", "num_years":"14", "weight":"DASWT_6", "control":"STCTYCOD","filter":"STCTYCOD%3D74%2C75%2C76%2C77"},
                 {"url_term":"NSDUH-2002-2013-RD12YR","year_range":"2002-2013","start_year":"2002","end_year":"2013", "num_years":"12", "weight":"DASWT_5", "control":"STCTYCOD","filter":"STCTYCOD%3D74%2C75%2C76%2C77"},
                 {"url_term":"NSDUH-2002-2011-RD10YR","year_range":"2002-2011","start_year":"2002","end_year":"2011", "num_years":"10", "weight":"DASWT_4", "control":"STCTYCOD","filter":"STCTYCOD%3D74%2C75%2C76%2C77"}]
+"""
+
+county_years = [{"url_term":"NSDUH-2010-2019-RD10YR","year_range":"2010-2019","start_year":"2010","end_year":"2019", "num_years":"10", "weight":"DASWT_4", "control":"STCTYCOD2","filter":"STCTYCOD2%3D85%2C83%2C84%2C82"}]
+
+shapefile_years = [{"url":"https://www.samhsa.gov/data/sites/default/files/reports/rpt29384/NSDUHsubstateShapeFile2018/ShapeFile2018.zip","year_range":"2016-2018","start_year":"2016","end_year":"2018","num_years":"2","state_pop":"1,160,319","Hawaii Island":"154486","Honolulu":"818512","Kauai":"56197","Maui":"131124"},
+                    {"url":"https://www.samhsa.gov/data/sites/default/files/cbhsq-reports/NSDUHsubstateShapeFile2016/ShapeFile2016.zip","year_range":"2014-2016","start_year":"2014","end_year":"2016","num_years":"2","state_pop":"1,162,034","Hawaii Island":"155455","Honolulu":"818697","Kauai":"56499","Maui":"131383"},
+                    {"url":"https://www.samhsa.gov/data/sites/default/files/NSDUHsubstateShapeFile2014/NSDUHsubstateShapeFile2014.zip","year_range":"2012-2014","start_year":"2012","end_year":"2014","num_years":"2","state_pop":"1,145,942","Hawaii Island":"154193","Honolulu":"806141","Kauai":"56012","Maui":"129596"},
+                    {"url":"https://www.samhsa.gov/data/sites/default/files/NSDUHsubstateShapeFile2012/NSDUHsubstateShapeFile2012.zip","year_range":"2010-2012","start_year":"2010","end_year":"2012","num_years":"2","state_pop":"1,123,500","Hawaii Island":"152588","Honolulu":"787623","Kauai":"55634","Maui":"127655"},
+                    {"url":"https://www.samhsa.gov/data/sites/default/files/Substate2k10-NSDUHsubstateShapefile2010/NSDUHsubstateShapefile2010.zip","year_range":"2008-2010","start_year":"2008","end_year":"2010","num_years":"2","state_pop":"1,069,970","Hawaii Island":"146741","Honolulu":"753234","Kauai":"52513","Maui":"117482"}]
+
+shapefile_variables = [{"variable":"TXNPILA","row_value":"12 or older","description":"txnpila: needing but not receiving treatment at a specialty facility for substance use in the past year"},
+                        {"variable":"METAMYR","row_value":"12 or older","description":"metamyr: methamphetamine use in the past year"},
+                        {"variable":"PNRNMYR","row_value":"12 or older","description":"pnrnmyr: pain reliever misuse in the past year"},
+                        {"variable":"TXNOSPA","row_value":"12 or older","description":"txnospa: needing but not receiving treatment at a specialty facility for alcohol use in the past year"},
+                        {"variable":"TXNOSPI","row_value":"12 or older","description":"txnospi: needing but not receiving treatment at a specialty facility for illicit drug use in the past year"},
+                        {"variable":"TXREC3","row_value":"18 or older","description":"txrec3: received mental health services in the past year "},
+                        {"variable":"UDPYILA","row_value":"12 or older","description":"udpyila: substance use disorder in the past year"},
+                        {"variable":"UDPYILL","row_value":"12 or older","description":"udpyill: illicit drug use disorder in the past year"},
+                        {"variable":"UDPYPNR","row_value":"12 or older","description":"udpypnr: pain reliever use disorder in the past year"},
+                        {"variable":"ABODALC","row_value":"12 or older","description":"adobalc: past year alcohol dependence or abuse"},
+                        {"variable":"AMIYR","row_value":"18 or older","description":"amiyr: any mental illness (AMI) in the past year"},
+                        {"variable":"COCYR","row_value":"12 or older","description":"mrjyr: past year use of marijuana"},
+                        {"variable":"SMIYR","row_value":"18 or older","description":"smiyr: serious mental illness (SMI) in the past year"}]
+
+# list of shapefile col_values that result in us omitting the row.  We only want positives, not negatives
+omit_results = ["0 - No/Unknown", "2 - No", "0 - No Past Year SMI", "0 - No Past Yr Any Mental Illness", "0 - No"]
+
+# tango:
+# - Weird results on https://rdas.samhsa.gov/#/survey/NSDUH-2010-2019-RD10YR/crosstab/?column=ABODMRJ&control=STCTYCOD2&filter=STCTYCOD2%3D85%2C83%2C84%2C82&results_received=true&row=CATAG2&run_chisq=false&weight=DASWT_4
+# - Omit "no/unknown" data?
 
 # turns out the older years use different values for the counties than the latest.
 # fortunately, there was no overlap, so I just put them all in the same dict for simplicity
@@ -106,8 +135,9 @@ counties = {"74":"Hawaii County", "75":"Honolulu County","76":"Maui County","77"
 # state data, write it out to a csv (as a backup), and then out to the database
 def load_state_and_county_data():
     results = set()
-    get_nsduh_data(True, results) # county
-    get_nsduh_data(False, results) # state
+    #get_nsduh_data(True, results) # county
+    #get_nsduh_data(False, results) # state
+    get_shapefile_data(results)
     df = write_json_to_csv_file(results)
     write_data_frame_to_db(df)
 
@@ -173,17 +203,15 @@ def get_nsduh_data(isCounty, results):
 
 # called by parse_data to generate a dict using all the given parameters.
 # kinda brain-dead, but I wanted to make sure if one got changed, they both got changed, and this would assure that.
-def make_cell_dict(county, row_type, col_type, row_value, col_value, count_unweighted, count_weighted, start_year, end_year, year_range):
-    #return f"'Hawaii', {county}, {row_type}, {col_type}, {row_value}, {col_value}, {count_unweighted}, {count_weighted}"
+def make_cell_dict(county, row_type, col_type, row_value, count, start_year, end_year, year_range):
+    #return f"'Hawaii', {county}, {row_type}, {col_type}, {row_value}, {count_weighted}"
     return dict({
         "state": "Hawaii",
         "county": county,
         "row_type": row_type,
         "col_type": col_type,
         "row_value": row_value,
-        "col_value": col_value,
-        "count_unweighted": count_unweighted,
-        "count_weighted": count_weighted,
+        "count": count,
         "start_year": start_year,
         "end_year": end_year,
         "year_range": year_range
@@ -211,23 +239,29 @@ def parse_data(isCounty, jsondata, results, hasControl, start_year, end_year, ye
             #print(f"3: {row_option}, {col_option}, {hasControl}, {isCounty}")
             # don't bother with anything unless row and column values are set for that cell since we don't want totals
             if row_option and col_option:
-                if not hasControl:
-                    county_value = ""
-                    if isCounty:
-                        county_value = counties[row_option]
-                    d = make_cell_dict(county_value, "", col_dict["title"], "", col_dict[col_option], cell["count"]["unweighted"], cell["count"]["weighted"], start_year, end_year, year_range)
-                    #print(f"dict: {d}")
-                    results.add(tuple(d.items()))
-                else:
-                    county_value = ""
-                    control_option = cell["control_option"]
-                    if control_option:
+                # Only let the positives go through, don't care about "no" answers
+                if col_dict[col_option] not in omit_results:
+                    if not hasControl:
                         county_value = ""
                         if isCounty:
-                            county_value = counties[control_option]
-                        d = make_cell_dict(county_value, row_dict["title"], col_dict["title"], row_dict[row_option], col_dict[col_option], cell["count"]["unweighted"], cell["count"]["weighted"], start_year, end_year, year_range)
+                            county_value = counties[row_option]
+                        d = make_cell_dict(county_value, "", col_dict["title"], "", cell["count"]["weighted"], start_year, end_year, year_range)
                         #print(f"dict: {d}")
                         results.add(tuple(d.items()))
+                    else:
+                        county_value = ""
+                        control_option = cell["control_option"]
+                        if control_option:
+                            county_value = ""
+                            if isCounty:
+                                county_value = counties[control_option]
+                                row_val = row_dict[row_option]
+                                # strip off the number dash thing at the beginning
+                                if (row_val and (len(row_val) > 5)):
+                                   row_val = row_val[4:]
+                            d = make_cell_dict(county_value, row_dict["title"], col_dict["title"], row_val, cell["count"]["weighted"], start_year, end_year, year_range)
+                            #print(f"dict: {d}")
+                            results.add(tuple(d.items()))
         print("success")
     except Exception as err:
         print(f"parse_data error: error.text: error: {err} ")
@@ -248,35 +282,20 @@ def make_dict_from_json(jsondata, key):
     #print(d)
     return d
 
-def read_shape_file():
-    print(f"in read_shape_file: {shp_path}")
-    #df = gpd.read_file(shp_path, ignore_geometry=True)
-    #print(list(df))
-    #print(df)
-    #print(df.head())
-    #df_hawaii = df[df["ST_NAME"] == "Hawaii"]
-    #print(df_hawaii)
-    #print(df_hawaii.columns)
-    #print(df_hawaii.head())
-
-    #sf = shapefile.Reader(shp_path)
-    shapefile_url = "https://www.samhsa.gov/data/sites/default/files/reports/rpt29384/NSDUHsubstateShapeFile2018/ShapeFile2018.zip"
-    #sf = shapefile.Reader(shapefile_url, verify = "False")
-   
-
-
-
-    # the actual shapefile
-    #shapefile_url = "https://www.samhsa.gov/data/sites/default/files/reports/rpt29384/NSDUHsubstateShapeFile2018/ShapeFile2018.zip"
+def get_shapefile_data(results):
+    print(f"in get_shapefile_data: ")
     # page the link is found on:
     # https://www.samhsa.gov/data/report/2016-2018-nsduh-substate-region-shapefile
-    #sf = shapefile.Reader(shapefile_url, verify = "False")
     # other years, for some, you need to click on the htm link and then click on the download link on that page.  Not consistent.
     # first link is main page, second link is the zip file, third is the population table (Table C1).  
     # Table C1 is found under "Other Related Reports" tab with label saying something like 
     # "NSDUH Guide to Substate Tables and Summary of Small Area Estimation Methodology"
     # or "NSDUH Overview and Summary of Substate Region Estimation Methodology"
     # Found all these via a search: https://www.samhsa.gov/data/all-reports?f%5B0%5D=location%3A182&keys=shapefile&sort_bef_combine=field_date_printed_on_report_DESC
+    # 2008-2010
+    # https://www.samhsa.gov/data/report/2008-2010-nsduh-substate-region-shapefile
+    # https://www.samhsa.gov/data/sites/default/files/Substate2k10-NSDUHsubstateShapefile2010/NSDUHsubstateShapefile2010.zip
+    # https://www.samhsa.gov/data/sites/default/files/Substate2k10-Methodology/Methodology/NSDUHsubstateMethodology2010.htm#TabC1
     # 2010-2012
     # https://www.samhsa.gov/data/report/2010-2012-nsduh-substate-region-shapefile-zip-file-download
     # https://www.samhsa.gov/data/sites/default/files/NSDUHsubstateShapeFile2012/NSDUHsubstateShapeFile2012.zip
@@ -299,6 +318,13 @@ def read_shape_file():
     # ex: 56,197 * (6.5/100) =  3,652 = count of TXNPILA for Kauai in 2016-2018
 
     """
+    2008-2010
+    Hawaii State: 1,069,970
+    Hawaii Island: 146,741
+    Honolulu: 753,234
+    Kauai: 52,513
+    Maui: 117,482
+
     2010-2012
     Hawaii State: 1,123,500
     Hawaii Island: 152,588
@@ -327,22 +353,6 @@ def read_shape_file():
     Kauai: 56,197
     Maui: 131,124
     """
-
-    shapefile_years = [{"url":"https://www.samhsa.gov/data/sites/default/files/reports/rpt29384/NSDUHsubstateShapeFile2018/ShapeFile2018.zip","year_range":"2016-2018","start_year":"2016","end_year":"2018","num_years":"2","state_pop":"1,160,319","Hawaii Island":"154486","Honolulu":"818512","Kauai":"56197","Maui":"131124"},
-                       {"url":"https://www.samhsa.gov/data/sites/default/files/cbhsq-reports/NSDUHsubstateShapeFile2016/ShapeFile2016.zip","year_range":"2014-2016","start_year":"2014","end_year":"2016","num_years":"2","state_pop":"1,162,034","Hawaii Island":"155455","Honolulu":"818697","Kauai":"56499","Maui":"131383"},
-                       {"url":"https://www.samhsa.gov/data/sites/default/files/NSDUHsubstateShapeFile2014/NSDUHsubstateShapeFile2014.zip","year_range":"2012-2014","start_year":"2012","end_year":"2014","num_years":"2","state_pop":"1,145,942","Hawaii Island":"154193","Honolulu":"806141","Kauai":"56012","Maui":"129596"},
-                       {"url":"https://www.samhsa.gov/data/sites/default/files/NSDUHsubstateShapeFile2012/NSDUHsubstateShapeFile2012.zip","year_range":"2010-2012","start_year":"2010","end_year":"2012","num_years":"2","state_pop":"1,123,500","Hawaii Island":"152588","Honolulu":"787623","Kauai":"55634","Maui":"127655"}]
-    shapefile_variables = [{"variable":"TXNPILA","row_value":"12 or older","description":"txnpila: needing but not receiving treatment at a specialty facility for substance use in the past year"},
-                           {"variable":"METAMYR","row_value":"12 or older","description":"metamyr: methamphetamine use in the past year"},
-                           {"variable":"PNRNMYR","row_value":"12 or older","description":"pnrnmyr: pain reliever misuse in the past year"},
-                           {"variable":"TXNOSPA","row_value":"12 or older","description":"txnospa: needing but not receiving treatment at a specialty facility for alcohol use in the past year"},
-                           {"variable":"TXNOSPI","row_value":"12 or older","description":"txnospi: needing but not receiving treatment at a specialty facility for illicit drug use in the past year"},
-                           {"variable":"TXREC3","row_value":"18 or older","description":"txrec3: received mental health services in the past year "},
-                           {"variable":"UDPYILA","row_value":"12 or older","description":"udpyila: substance use disorder in the past year"},
-                           {"variable":"UDPYILL","row_value":"12 or older","description":"udpyill: illicit drug use disorder in the past year"},
-                           {"variable":"UDPYPNR","row_value":"12 or older","description":"udpypnr: pain reliever use disorder in the past year "}]
-    
-
     for year in shapefile_years:
         print(f"\n\nyear: {year}, url: {year['url']}")
         sf = shapefile.Reader(year['url'], verify = "False")
@@ -367,14 +377,19 @@ def read_shape_file():
                             population = float(year[rd['SR_NAME']])
                             count = round(var_val * population / 100)
 
-                            print(f"county: {rd['SR_NAME']}, var: {var_key}, val: {count}")
+                            #print(f"county: {rd['SR_NAME']}, var: {var_key}, val: {count}")
+                            d = make_cell_dict(rd['SR_NAME'], "", var["description"], "", count, year["start_year"], year["end_year"], year["year_range"])
+                            results.add(tuple(d.items()))
+
                             # if no match, change to lower case and try again
                         elif var_key.lower() in rd:
                             var_key = var_key.lower()
                             var_val = rd[var_key]
                             population = float(year[rd['SR_NAME']])
                             count = round(var_val * population / 100)
-                            print(f"county: {rd['SR_NAME']}, var: {var_key}, val: {count}")
+                            #print(f"county: {rd['SR_NAME']}, var: {var_key}, val: {count}")
+                            d = make_cell_dict(rd['SR_NAME'], "", var["description"], "", count, year["start_year"], year["end_year"], year["year_range"])
+                            results.add(tuple(d.items()))
 
 
                     except Error as e:
@@ -410,15 +425,13 @@ def read_shape_file():
         "year_range": "2016-2018"
     })
 
-    +--------+--------------+-----------------------------------+----------------------------------------------+-----------------+----------------+------------------+----------------+------------+----------+------------+
-    | state  | county       | row_type                          | col_type                                     | row_value       | col_value      | count_unweighted | count_weighted | start_year | end_year | year_range |
-    +--------+--------------+-----------------------------------+----------------------------------------------+-----------------+----------------+------------------+----------------+------------+----------+------------+
-    | Hawaii | Maui County  | RC-AGE CATEGORY RECODE (3 LEVELS) | RC-MARIJUANA DEPENDENCE OR ABUSE - PAST YEAR | 3 - 26 or Older | 0 - No/Unknown |             NULL |         114000 |       2010 |     2019 | 2010-2019  |
-    | Hawaii | NULL         | IMPUTATION REVISED GENDER         | RCVD ANY MENTAL HEALTH TRT IN PST YR         | 2 - Female      | 1 - Yes        |             NULL |          56000 |       2004 |     2005 | 2004-2005  |
-    | Hawaii | NULL         | AGE CATEGORY RECODE (3 LEVELS)    | MARIJUANA ABUSE OR DEPENDENCE - PAST YEAR    | 3 - 26 or Older | 1 - Yes        |             NULL |           9000 |       2002 |     2003 | 2002-2003  |
-    | Hawaii | Kauai County | RC-AGE CATEGORY RECODE (3 LEVELS) | RC-MARIJUANA DEPENDENCE OR ABUSE - PAST YEAR | 3 - 26 or Older | 1 - Yes        |             NULL |           1000 |       2010 |     2019 | 2010-2019  |
-    | Hawaii | NULL         | RC-AGE CATEGORY RECODE (5 LEVELS) | RC-ALCOHOL DEPENDENCE OR ABUSE - PAST YEAR   | 5 - 50 or Older | 0 - No/Unknown |             NULL |         504000 |       2016 |     2017 | 2016-2017  |
-    +--------+--------------+-----------------------------------+----------------------------------------------+-----------------+----------------+------------------+----------------+------------+----------+------------+
++--------+-----------------+-----------------------------------+------------------------------------------------------+-----------------+--------+------------+----------+------------+
+| state  | county          | row_type                          | col_type                                             | row_value       | count  | start_year | end_year | year_range |
++--------+-----------------+-----------------------------------+------------------------------------------------------+-----------------+--------+------------+----------+------------+
+| Hawaii | Hawaii County   | RC-AGE CATEGORY RECODE (5 LEVELS) | RC-ALCOHOL DEPENDENCE OR ABUSE - PAST YEAR           | 18-25 Years Old |   2000 | 2010       | 2019     | 2010-2019  |
+| Hawaii | Hawaii County   |                                   | RC-PERCEIVED UNMET NEED/DID NOT RCV MH TRT IN PST YR |                 |   5000 | 2010       | 2019     | 2010-2019  |
+| Hawaii | Kauai County    | RC-AGE CATEGORY RECODE (3 LEVELS) | RC-ALCOHOL DEPENDENCE OR ABUSE - PAST YEAR           | 12-17 Years Old |   1000 | 2010       | 2019     | 2010-2019  |
+| Hawaii | Maui County     |                                   | RC-SMI IND (1/0) BASED ON REVISED PREDICTED SMI PROB |                 |   7000 | 2010       | 2019     | 2010-2019  |
     """
 
 
@@ -514,9 +527,9 @@ def print_url_contents(url):
         print(jsondata)
 
 
-#load_state_and_county_data()
+load_state_and_county_data()
 #print_url_contents()
-read_shape_file()
+#read_shape_file()
 #write_data_frame_to_db()
 #read_csv_write_to_db()
 
@@ -580,4 +593,13 @@ filenames = [y for y in sorted(open_zip.namelist()) for ending in ['dbf', 'prj',
 print(filenames)
 dbf, prj, shp, shx = [io.StringIO(zipfile.ZipFile.read(filename)) for filename in filenames]
 r = shapefile.Reader(shp=shp, shx=shx, dbf=dbf)
+
+#df = gpd.read_file(shp_path, ignore_geometry=True)
+#print(list(df))
+#print(df)
+#print(df.head())
+#df_hawaii = df[df["ST_NAME"] == "Hawaii"]
+#print(df_hawaii)
+#print(df_hawaii.columns)
+#print(df_hawaii.head())
 """
