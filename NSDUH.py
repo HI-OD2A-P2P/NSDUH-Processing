@@ -25,13 +25,14 @@ import ssl
 
 
 # TODO:
-# - figure out how to incorporate shapefile data
 # - add key to db table so duplicates aren't inserted
 # - record all the year/variable combos that cause 500 errors and print them out at the end so we can verify and maybe change the variables
-# - strip off things like "1 - " at the start of each row_value
 # - change NULLs to empty strings?
 
 # Done:
+# - strip off things like "1 - " at the start of each row_value
+# - figure out how to incorporate shapefile data
+# - get rid of all caps, maybe just lower case
 # - drop count_unweighted column, it's only value is null
 # - rename count_weighted to just count
 # - strip out col_value results of "no/unknown", only want positives, not negatives eg: (0 - No/Unknown, 2 - No, 0 - No Past Year SMI, 0 - No Past Yr Any Mental Illness, 0 - No)       
@@ -49,7 +50,6 @@ db_user = "<Your Username Here>"
 db_pwd = "<Your Password Here>"
 query_d = {}
 dir = "<path to csv file>"
-
 
 pyodbc.pooling = False
 ssl._create_default_https_context = ssl._create_unverified_context
@@ -89,16 +89,14 @@ state_years = [{"url_term":"NSDUH-2018-2019-RD02YR","year_range":"2018-2019","st
                {"url_term":"NSDUH-2004-2005-RD02YR","year_range":"2004-2005","start_year":"2004","end_year":"2005", "num_years":"2", "weight":"DASWT_1", "control":"STNAME","filter":"STNAME%3DHAWAII"},
                {"url_term":"NSDUH-2002-2003-RD02YR","year_range":"2002-2003","start_year":"2002","end_year":"2003", "num_years":"2", "weight":"DASWT_1", "control":"STNAME","filter":"STNAME%3DHAWAII"}]
 
-"""
 county_years = [{"url_term":"NSDUH-2010-2019-RD10YR","year_range":"2010-2019","start_year":"2010","end_year":"2019", "num_years":"10", "weight":"DASWT_4", "control":"STCTYCOD2","filter":"STCTYCOD2%3D85%2C83%2C84%2C82"},
                 {"url_term":"NSDUH-2002-2017-RD16YR","year_range":"2002-2017","start_year":"2002","end_year":"2017", "num_years":"16", "weight":"DASWT_8", "control":"STCTYCOD","filter":"STCTYCOD%3D74%2C75%2C76%2C77"},
                 {"url_term":"NSDUH-2002-2016-RD15YR","year_range":"2002-2016","start_year":"2002","end_year":"2016", "num_years":"15", "weight":"DASWT_7", "control":"STCTYCOD","filter":"STCTYCOD%3D74%2C75%2C76%2C77"},
                 {"url_term":"NSDUH-2002-2015-RD14YR","year_range":"2002-2015","start_year":"2002","end_year":"2015", "num_years":"14", "weight":"DASWT_6", "control":"STCTYCOD","filter":"STCTYCOD%3D74%2C75%2C76%2C77"},
                 {"url_term":"NSDUH-2002-2013-RD12YR","year_range":"2002-2013","start_year":"2002","end_year":"2013", "num_years":"12", "weight":"DASWT_5", "control":"STCTYCOD","filter":"STCTYCOD%3D74%2C75%2C76%2C77"},
                 {"url_term":"NSDUH-2002-2011-RD10YR","year_range":"2002-2011","start_year":"2002","end_year":"2011", "num_years":"10", "weight":"DASWT_4", "control":"STCTYCOD","filter":"STCTYCOD%3D74%2C75%2C76%2C77"}]
-"""
 
-county_years = [{"url_term":"NSDUH-2010-2019-RD10YR","year_range":"2010-2019","start_year":"2010","end_year":"2019", "num_years":"10", "weight":"DASWT_4", "control":"STCTYCOD2","filter":"STCTYCOD2%3D85%2C83%2C84%2C82"}]
+#county_years = [{"url_term":"NSDUH-2010-2019-RD10YR","year_range":"2010-2019","start_year":"2010","end_year":"2019", "num_years":"10", "weight":"DASWT_4", "control":"STCTYCOD2","filter":"STCTYCOD2%3D85%2C83%2C84%2C82"}]
 
 shapefile_years = [{"url":"https://www.samhsa.gov/data/sites/default/files/reports/rpt29384/NSDUHsubstateShapeFile2018/ShapeFile2018.zip","year_range":"2016-2018","start_year":"2016","end_year":"2018","num_years":"2","state_pop":"1,160,319","Hawaii Island":"154486","Honolulu":"818512","Kauai":"56197","Maui":"131124"},
                     {"url":"https://www.samhsa.gov/data/sites/default/files/cbhsq-reports/NSDUHsubstateShapeFile2016/ShapeFile2016.zip","year_range":"2014-2016","start_year":"2014","end_year":"2016","num_years":"2","state_pop":"1,162,034","Hawaii Island":"155455","Honolulu":"818697","Kauai":"56499","Maui":"131383"},
@@ -135,8 +133,8 @@ counties = {"74":"Hawaii County", "75":"Honolulu County","76":"Maui County","77"
 # state data, write it out to a csv (as a backup), and then out to the database
 def load_state_and_county_data():
     results = set()
-    #get_nsduh_data(True, results) # county
-    #get_nsduh_data(False, results) # state
+    get_nsduh_data(True, results) # county
+    get_nsduh_data(False, results) # state
     get_shapefile_data(results)
     df = write_json_to_csv_file(results)
     write_data_frame_to_db(df)
@@ -208,8 +206,8 @@ def make_cell_dict(county, row_type, col_type, row_value, count, start_year, end
     return dict({
         "state": "Hawaii",
         "county": county,
-        "row_type": row_type,
-        "col_type": col_type,
+        "row_type": row_type.lower(),
+        "col_type": col_type.lower(),
         "row_value": row_value,
         "count": count,
         "start_year": start_year,
@@ -310,6 +308,7 @@ def get_shapefile_data(results):
     # https://www.samhsa.gov/data/sites/default/files/cbhsq-reports/NSDUHsubstateMethodology2016/NSDUHsubstateMethodology2016.htm#tabc1
     # 2016-2018
     # https://www.samhsa.gov/data/report/2016-2018-nsduh-substate-region-shapefile
+    # https://www.samhsa.gov/data/sites/default/files/reports/rpt29384/NSDUHsubstateShapeFile2018/NSDUHsubstateShapeFile2018.htm # definitions
     # https://www.samhsa.gov/data/sites/default/files/reports/rpt29384/NSDUHsubstateShapeFile2018/ShapeFile2018.zip
     # https://www.samhsa.gov/data/sites/default/files/reports/rpt29372/NSDUHsubstateMethodology2018_0/NSDUHsubstateMethodology2018.htm#tabc1
     # 2018-2020: data not available, see https://www.samhsa.gov/data/report/2018-2020-nsduh-substate-region-shapefile for details
@@ -354,11 +353,11 @@ def get_shapefile_data(results):
     Maui: 131,124
     """
     for year in shapefile_years:
-        print(f"\n\nyear: {year}, url: {year['url']}")
+        print(f"\n\nyear: {year}, url: {year['url']}\n")
         sf = shapefile.Reader(year['url'], verify = "False")
-        #print(sf.fields)
+        print(f"sf.fields: {sf.fields}\n")
         rec = sf.records()
-        #print(rec)
+        #print(f"rec: {rec}\n") # really big result, don't bother with this unless outputting to a file
         #print(rec["Record #"])
         #print(rec[1].as_dict())
         for r in rec:
@@ -378,7 +377,7 @@ def get_shapefile_data(results):
                             count = round(var_val * population / 100)
 
                             #print(f"county: {rd['SR_NAME']}, var: {var_key}, val: {count}")
-                            d = make_cell_dict(rd['SR_NAME'], "", var["description"], "", count, year["start_year"], year["end_year"], year["year_range"])
+                            d = make_cell_dict(rd['SR_NAME'], "age range", var["description"], var["row_value"], count, year["start_year"], year["end_year"], year["year_range"])
                             results.add(tuple(d.items()))
 
                             # if no match, change to lower case and try again
@@ -388,7 +387,7 @@ def get_shapefile_data(results):
                             population = float(year[rd['SR_NAME']])
                             count = round(var_val * population / 100)
                             #print(f"county: {rd['SR_NAME']}, var: {var_key}, val: {count}")
-                            d = make_cell_dict(rd['SR_NAME'], "", var["description"], "", count, year["start_year"], year["end_year"], year["year_range"])
+                            d = make_cell_dict(rd['SR_NAME'], "age range", var["description"], var["row_value"], count, year["start_year"], year["end_year"], year["year_range"])
                             results.add(tuple(d.items()))
 
 
