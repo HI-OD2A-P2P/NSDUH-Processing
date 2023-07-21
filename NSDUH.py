@@ -25,9 +25,9 @@ import ssl
 
 
 # TODO:
-# - add key to db table so duplicates aren't inserted
+# - Omit "no/unknown" data?
+# - verify blank row_type, row_value, and county are all legit and not errors
 # - record all the year/variable combos that cause 500 errors and print them out at the end so we can verify and maybe change the variables
-# - change NULLs to empty strings?
 
 # Done:
 # - strip off things like "1 - " at the start of each row_value
@@ -121,13 +121,12 @@ shapefile_variables = [{"variable":"TXNPILA","row_value":"12 or older","descript
 # list of shapefile col_values that result in us omitting the row.  We only want positives, not negatives
 omit_results = ["0 - No/Unknown", "2 - No", "0 - No Past Year SMI", "0 - No Past Yr Any Mental Illness", "0 - No"]
 
-# tango:
 # - Weird results on https://rdas.samhsa.gov/#/survey/NSDUH-2010-2019-RD10YR/crosstab/?column=ABODMRJ&control=STCTYCOD2&filter=STCTYCOD2%3D85%2C83%2C84%2C82&results_received=true&row=CATAG2&run_chisq=false&weight=DASWT_4
-# - Omit "no/unknown" data?
+#   - turns out it's a rounding issue.  Not a problem
 
 # turns out the older years use different values for the counties than the latest.
 # fortunately, there was no overlap, so I just put them all in the same dict for simplicity
-counties = {"74":"Hawaii County", "75":"Honolulu County","76":"Maui County","77":"County Not Specified","82":"Hawaii County", "83":"Honolulu County","84":"Kauai County","85":"Maui County"}
+counties = {"74":"Hawaii", "75":"Honolulu","76":"Maui","77":"County Not Specified","82":"Hawaii", "83":"Honolulu","84":"Kauai","85":"Maui"}
 
 # main driver of everything.  Calls methods to get county data, 
 # state data, write it out to a csv (as a backup), and then out to the database
@@ -203,12 +202,36 @@ def get_nsduh_data(isCounty, results):
 # kinda brain-dead, but I wanted to make sure if one got changed, they both got changed, and this would assure that.
 def make_cell_dict(county, row_type, col_type, row_value, count, start_year, end_year, year_range):
     #return f"'Hawaii', {county}, {row_type}, {col_type}, {row_value}, {count_weighted}"
+    row_type = row_type.lower()
+    col_type = col_type.lower()
+    if county and county == "Hawaii Island":
+        county = "Hawaii"
+    if row_type  and row_type.lower() == "imputation revised gender":
+        row_type = "gender"
+    if row_type  and row_type == "gender - imputation revised":
+        row_type = "gender"
+    if row_type  and row_type == "age category recode (3 levels)":
+        row_type = "age (3 levels)" 
+    if row_type  and row_type == "rc-age category recode (3 levels)":
+        row_type = "age (3 levels)"    
+    if row_type  and row_type == "rc-age category recode (5 levels)":
+        row_type = "age (5 levels)"      
+    if col_type and col_type == "adobalc: past year alcohol dependence or abuse":
+        col_type = "alcohol abuse or dependence - past year"
+    if col_type and col_type == "rc-alcohol dependence or abuse - past year":
+        col_type = "alcohol abuse or dependence - past year"
+    if col_type and col_type == "rc-ami ind (1/0) based on revised predicted smi prob":
+        col_type = "ami ind (1/0) based on revised predicted smi prob"
+    if col_type and col_type == "rc-cocaine dependence or abuse - past year":
+        col_type = "cocaine abuse or dependence - past year"
+    if col_type and col_type.startswith("rc-"):
+        col_type = col_type[3:]
     return dict({
         "state": "Hawaii",
         "county": county,
-        "row_type": row_type.lower(),
-        "col_type": col_type.lower(),
-        "row_value": row_value,
+        "category": row_type,
+        "category_type": row_value,
+        "diagnosis": col_type,
         "count": count,
         "start_year": start_year,
         "end_year": end_year,
@@ -393,45 +416,6 @@ def get_shapefile_data(results):
 
                     except Error as e:
                         print("Error: ", e) 
-    """
-    sf = shapefile.Reader(shapefile_url, verify = "False")
-    #sf = shapefile.Reader(shp_path)
-    print(sf.fields)
-    rec = sf.records()
-    #print(rec)
-    #print(rec["Record #"])
-    print(rec[1].as_dict())
-    for r in rec:
-        rd = r.as_dict()
-        if rd["ST_NAME"] == "Hawaii":
-            print(f"record1: {rd}\n")
-            #print(rd["TXNPILA"])
-            print(f"record: {rd['ST_NAME']},{rd['SR_NAME']},{rd['TXNPILA']},{rd['METAMYR']},{rd['PNRNMYR']},{rd['TXNOSPA']},{rd['TXNOSPI']},{rd['TXREC3']},{rd['UDPYILA']},{rd['UDPYILL']},{rd['UDPYPNR']}\n")
-            #print(f"record: {rd['ST_NAME']}")
-    """
-    """
-        return dict({
-        "state": f"{rd['ST_NAME']}",
-        "county": f"{rd['SR_NAME']}",
-        "row_type": "Age Range",
-        "col_type": col_type,
-        "row_value": row_value,
-        "col_value": "1 - Yes",
-        "count_unweighted": NULL,
-        "count_weighted": count_weighted,
-        "start_year": "2016",
-        "end_year": "2018",
-        "year_range": "2016-2018"
-    })
-
-+--------+-----------------+-----------------------------------+------------------------------------------------------+-----------------+--------+------------+----------+------------+
-| state  | county          | row_type                          | col_type                                             | row_value       | count  | start_year | end_year | year_range |
-+--------+-----------------+-----------------------------------+------------------------------------------------------+-----------------+--------+------------+----------+------------+
-| Hawaii | Hawaii County   | RC-AGE CATEGORY RECODE (5 LEVELS) | RC-ALCOHOL DEPENDENCE OR ABUSE - PAST YEAR           | 18-25 Years Old |   2000 | 2010       | 2019     | 2010-2019  |
-| Hawaii | Hawaii County   |                                   | RC-PERCEIVED UNMET NEED/DID NOT RCV MH TRT IN PST YR |                 |   5000 | 2010       | 2019     | 2010-2019  |
-| Hawaii | Kauai County    | RC-AGE CATEGORY RECODE (3 LEVELS) | RC-ALCOHOL DEPENDENCE OR ABUSE - PAST YEAR           | 12-17 Years Old |   1000 | 2010       | 2019     | 2010-2019  |
-| Hawaii | Maui County     |                                   | RC-SMI IND (1/0) BASED ON REVISED PREDICTED SMI PROB |                 |   7000 | 2010       | 2019     | 2010-2019  |
-    """
 
 
 # writes the results out to a csv file and returns the results as a DataFrame
@@ -507,9 +491,9 @@ def write_data_frame_to_db(df):
         engine = make_db_connection()
         # add data to the table
         if is_mssql:
-            df.to_sql(db_table, schema="dbo", con=engine, index=False, if_exists='fail')
+            df.to_sql(db_table, schema="dbo", con=engine, index=True, if_exists='fail')
         else:
-            df.to_sql(db_table, con=engine, index=False, if_exists='fail')
+            df.to_sql(db_table, con=engine, index=True, if_exists='fail')
     except Error as e:
         print("Error while connecting", e)
     # state:
@@ -568,37 +552,4 @@ https://rdas.samhsa.gov/api/surveys/NSDUH-2002-2017-RD16YR/crosstab/?control=STC
 index: 6, control: STCTYCOD, row: CATAG2, column: SMIYR_U,  filter: STCTYCOD%3D74%2C75%2C76%2C77, weight: DASWT_8
 https://rdas.samhsa.gov/api/surveys/NSDUH-2002-2017-RD16YR/crosstab/?control=STCTYCOD&row=CATAG2&column=SMIYR_U&filter=STCTYCOD%3D74%2C75%2C76%2C77&weight=DASWT_8&run_chisq=false&format=json
 <Response [500]>
-"""
-
-"""
-zip_buffer = io.BytesIO()
-with zipfile.ZipFile(zip_buffer, "a",
-                    zipfile.ZIP_DEFLATED, False) as zip_file:
-    for file_name, data in [('1.txt', io.BytesIO(b'111')),
-                            ('2.txt', io.BytesIO(b'222'))]:
-        zip_file.writestr(file_name, data.getvalue())
-with open('C:/1.zip', 'wb') as f:
-    f.write(zip_buffer.getvalue())
-"""
-"""
-open_zip = zipfile.ZipFile(io.BytesIO(urllib.request.urlopen(shapefile_url).read()))
-
-print("Done")
-#filename = [y for y in sorted(open_zip.namelist()) for ending in ['shp'] if y.endswith(ending)] 
-#print(filename)
-#shp_file = io.StringIO(zipfile.ZipFile.read(filename[0]))
-
-filenames = [y for y in sorted(open_zip.namelist()) for ending in ['dbf', 'prj', 'shp', 'shx'] if y.endswith(ending)] 
-print(filenames)
-dbf, prj, shp, shx = [io.StringIO(zipfile.ZipFile.read(filename)) for filename in filenames]
-r = shapefile.Reader(shp=shp, shx=shx, dbf=dbf)
-
-#df = gpd.read_file(shp_path, ignore_geometry=True)
-#print(list(df))
-#print(df)
-#print(df.head())
-#df_hawaii = df[df["ST_NAME"] == "Hawaii"]
-#print(df_hawaii)
-#print(df_hawaii.columns)
-#print(df_hawaii.head())
 """
