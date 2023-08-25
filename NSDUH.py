@@ -1,3 +1,58 @@
+"""
+General info on what this is and how it works:
+
+SAMHDA: Substance Abuse and Mental Health Data Archive 
+NSDUH: National Survey on Drug Use and Health
+RDAS: Restricted-Use Data Access System
+
+This program gathers SAMHDA NSDUH data via the RDAS API on both the state and 
+county level, as well as processing the SAMHDA NSDUH shapefile data. 
+
+It starts by calling the "load_state_and_county_data" method.  This first calls
+the same method "get_nsduh_data" twice, passing in different parameters to 
+indicate if it's getting the state data or the county data.  The 
+"get_nsduh_data" method calls the api repeatedly, cycling through the various 
+inputs (demographic categories, AKA "rows" and diagnoses, AKA "columns") while 
+gathering the data and formatting it into something that works for us. 
+
+Next, "load_state_and_county_data" calls the "get_shapefile_data" method which 
+uses a shapefile reader to process the zip file urls found in the 
+"shapefile_years" variable.  
+
+Finally, it writes it all out to a csv file and then writes it all out to either 
+a MySQL or a MSSQL database.  
+
+To convert the rdas.samhsa.gov api url calls from the json format 
+https://rdas.samhsa.gov/api/surveys/NSDUH-2010-2019-RD10YR/crosstab/?...
+to the human-readable graphic format, change the "api/surveys" part to "#/survey", like:
+https://rdas.samhsa.gov/#/survey/NSDUH-2010-2019-RD10YR/crosstab/?...
+and remove the "format=json" param at the end. Other than that, leave the other 
+parameters intact to get the same results just in the human-readable format.
+You'll need to hit the "Run Crosstab" button to get the results.
+
+"""
+
+"""
+How to run:
+
+Before running:
+1. Set the csv file and database variables.  Search for "fields you will need
+to edit before running this" and edit the section below.  Make sure the 
+"is_mssql" variable is set to true if you are using  mssql and false if you 
+are using mysql.
+
+2. Make sure you do not have an already existing csv file or database table
+that matches the ones this program will attempt to create.  If there is one 
+of these, either rename it, or change the "csv_file" or "db_table" variables 
+as needed.
+
+To run, go to the directory in which you have installed it and type:
+python NSDUH.py
+
+Be prepared for this to run for quite a while if you're doing a full run.  
+Half an hour?  I never actually timed it, but it seems to take forever.
+"""
+
 import os
 import pandas as pd
 import pdb
@@ -79,30 +134,31 @@ AMHTXND2 Rc-Perceived Unmet Need/did Not Rcv Mh Trt In Pst Yr
 county_columns = ["ABODMRJ","ABODALC","ABODHER","ABODCOC","AMIYR_U","SMIYR_U","AMHTXRC3","AMHTXND2"]
 state_columns = ["ABODMRJ","ABODALC","ABODHER","ABODCOC","UDPYIEM","UDPYILL","UDPYMTH","UDPYOPI","UDPYHRPNR","AMIYR_U","SMIYR_U","AMHTXRC3","AMHTXND2","AMISUDPY","SMISUDPY","TXYRRECVD2"]
 
-state_years = [{"url_term":"NSDUH-2018-2019-RD02YR","year_range":"2018-2019","start_year":"2018","end_year":"2019", "num_years":"2", "weight":"DASWT_1", "control":"STNAME","filter":"STNAME%3DHAWAII"},
-               {"url_term":"NSDUH-2016-2017-RD02YR","year_range":"2016-2017","start_year":"2016","end_year":"2017", "num_years":"2", "weight":"DASWT_1", "control":"STNAME","filter":"STNAME%3DHAWAII"},
-               {"url_term":"NSDUH-2014-2015-RD02YR","year_range":"2014-2015","start_year":"2014","end_year":"2015", "num_years":"2", "weight":"DASWT_1", "control":"STNAME","filter":"STNAME%3DHAWAII"},
-               {"url_term":"NSDUH-2012-2013-RD02YR","year_range":"2012-2013","start_year":"2012","end_year":"2013", "num_years":"2", "weight":"DASWT_1", "control":"STNAME","filter":"STNAME%3DHAWAII"},
-               {"url_term":"NSDUH-2010-2011-RD02YR","year_range":"2010-2011","start_year":"2010","end_year":"2011", "num_years":"2", "weight":"DASWT_1", "control":"STNAME","filter":"STNAME%3DHAWAII"},
-               {"url_term":"NSDUH-2008-2009-RD02YR","year_range":"2008-2009","start_year":"2008","end_year":"2009", "num_years":"2", "weight":"DASWT_1", "control":"STNAME","filter":"STNAME%3DHAWAII"},
-               {"url_term":"NSDUH-2006-2007-RD02YR","year_range":"2006-2007","start_year":"2006","end_year":"2007", "num_years":"2", "weight":"DASWT_1", "control":"STNAME","filter":"STNAME%3DHAWAII"},
-               {"url_term":"NSDUH-2004-2005-RD02YR","year_range":"2004-2005","start_year":"2004","end_year":"2005", "num_years":"2", "weight":"DASWT_1", "control":"STNAME","filter":"STNAME%3DHAWAII"},
-               {"url_term":"NSDUH-2002-2003-RD02YR","year_range":"2002-2003","start_year":"2002","end_year":"2003", "num_years":"2", "weight":"DASWT_1", "control":"STNAME","filter":"STNAME%3DHAWAII"}]
+state_years = [{"data_source":"SAMHDA RDAS NSDUH 2 year (2018-2019) State Level Data","url_term":"NSDUH-2018-2019-RD02YR","year_range":"2018-2019","start_year":"2018","end_year":"2019", "num_years":"2", "weight":"DASWT_1", "control":"STNAME","filter":"STNAME%3DHAWAII"},
+               {"data_source":"SAMHDA RDAS NSDUH 2 year (2016-2017) State Level Data","url_term":"NSDUH-2016-2017-RD02YR","year_range":"2016-2017","start_year":"2016","end_year":"2017", "num_years":"2", "weight":"DASWT_1", "control":"STNAME","filter":"STNAME%3DHAWAII"},
+               {"data_source":"SAMHDA RDAS NSDUH 2 year (2014-2015) State Level Data","url_term":"NSDUH-2014-2015-RD02YR","year_range":"2014-2015","start_year":"2014","end_year":"2015", "num_years":"2", "weight":"DASWT_1", "control":"STNAME","filter":"STNAME%3DHAWAII"},
+               {"data_source":"SAMHDA RDAS NSDUH 2 year (2012-2013) State Level Data","url_term":"NSDUH-2012-2013-RD02YR","year_range":"2012-2013","start_year":"2012","end_year":"2013", "num_years":"2", "weight":"DASWT_1", "control":"STNAME","filter":"STNAME%3DHAWAII"},
+               {"data_source":"SAMHDA RDAS NSDUH 2 year (2010-2011) State Level Data","url_term":"NSDUH-2010-2011-RD02YR","year_range":"2010-2011","start_year":"2010","end_year":"2011", "num_years":"2", "weight":"DASWT_1", "control":"STNAME","filter":"STNAME%3DHAWAII"},
+               {"data_source":"SAMHDA RDAS NSDUH 2 year (2008-2009) State Level Data","url_term":"NSDUH-2008-2009-RD02YR","year_range":"2008-2009","start_year":"2008","end_year":"2009", "num_years":"2", "weight":"DASWT_1", "control":"STNAME","filter":"STNAME%3DHAWAII"},
+               {"data_source":"SAMHDA RDAS NSDUH 2 year (2006-2007) State Level Data","url_term":"NSDUH-2006-2007-RD02YR","year_range":"2006-2007","start_year":"2006","end_year":"2007", "num_years":"2", "weight":"DASWT_1", "control":"STNAME","filter":"STNAME%3DHAWAII"},
+               {"data_source":"SAMHDA RDAS NSDUH 2 year (2004-2005) State Level Data","url_term":"NSDUH-2004-2005-RD02YR","year_range":"2004-2005","start_year":"2004","end_year":"2005", "num_years":"2", "weight":"DASWT_1", "control":"STNAME","filter":"STNAME%3DHAWAII"},
+               {"data_source":"SAMHDA RDAS NSDUH 2 year (2002-2003) State Level Data","url_term":"NSDUH-2002-2003-RD02YR","year_range":"2002-2003","start_year":"2002","end_year":"2003", "num_years":"2", "weight":"DASWT_1", "control":"STNAME","filter":"STNAME%3DHAWAII"}]
 
-county_years = [{"url_term":"NSDUH-2010-2019-RD10YR","year_range":"2010-2019","start_year":"2010","end_year":"2019", "num_years":"10", "weight":"DASWT_4", "control":"STCTYCOD2","filter":"STCTYCOD2%3D85%2C83%2C84%2C82"},
-                {"url_term":"NSDUH-2002-2017-RD16YR","year_range":"2002-2017","start_year":"2002","end_year":"2017", "num_years":"16", "weight":"DASWT_8", "control":"STCTYCOD","filter":"STCTYCOD%3D74%2C75%2C76%2C77"},
-                {"url_term":"NSDUH-2002-2016-RD15YR","year_range":"2002-2016","start_year":"2002","end_year":"2016", "num_years":"15", "weight":"DASWT_7", "control":"STCTYCOD","filter":"STCTYCOD%3D74%2C75%2C76%2C77"},
-                {"url_term":"NSDUH-2002-2015-RD14YR","year_range":"2002-2015","start_year":"2002","end_year":"2015", "num_years":"14", "weight":"DASWT_6", "control":"STCTYCOD","filter":"STCTYCOD%3D74%2C75%2C76%2C77"},
-                {"url_term":"NSDUH-2002-2013-RD12YR","year_range":"2002-2013","start_year":"2002","end_year":"2013", "num_years":"12", "weight":"DASWT_5", "control":"STCTYCOD","filter":"STCTYCOD%3D74%2C75%2C76%2C77"},
-                {"url_term":"NSDUH-2002-2011-RD10YR","year_range":"2002-2011","start_year":"2002","end_year":"2011", "num_years":"10", "weight":"DASWT_4", "control":"STCTYCOD","filter":"STCTYCOD%3D74%2C75%2C76%2C77"}]
+county_years = [{"data_source":"SAMHDA RDAS NSDUH 10 year (2010-2019) County Level Data","url_term":"NSDUH-2010-2019-RD10YR","year_range":"2010-2019","start_year":"2010","end_year":"2019", "num_years":"10", "weight":"DASWT_4", "control":"STCTYCOD2","filter":"STCTYCOD2%3D85%2C83%2C84%2C82"},
+                {"data_source":"SAMHDA RDAS NSDUH 16 year (2002-2017) County Level Data","url_term":"NSDUH-2002-2017-RD16YR","year_range":"2002-2017","start_year":"2002","end_year":"2017", "num_years":"16", "weight":"DASWT_8", "control":"STCTYCOD","filter":"STCTYCOD%3D74%2C75%2C76%2C77"},
+                {"data_source":"SAMHDA RDAS NSDUH 15 year (2002-2016) County Level Data","url_term":"NSDUH-2002-2016-RD15YR","year_range":"2002-2016","start_year":"2002","end_year":"2016", "num_years":"15", "weight":"DASWT_7", "control":"STCTYCOD","filter":"STCTYCOD%3D74%2C75%2C76%2C77"},
+                {"data_source":"SAMHDA RDAS NSDUH 14 year (2002-2015) County Level Data","url_term":"NSDUH-2002-2015-RD14YR","year_range":"2002-2015","start_year":"2002","end_year":"2015", "num_years":"14", "weight":"DASWT_6", "control":"STCTYCOD","filter":"STCTYCOD%3D74%2C75%2C76%2C77"},
+                {"data_source":"SAMHDA RDAS NSDUH 12 year (2002-2013) County Level Data","url_term":"NSDUH-2002-2013-RD12YR","year_range":"2002-2013","start_year":"2002","end_year":"2013", "num_years":"12", "weight":"DASWT_5", "control":"STCTYCOD","filter":"STCTYCOD%3D74%2C75%2C76%2C77"},
+                {"data_source":"SAMHDA RDAS NSDUH 10 year (2002-2011) County Level Data","url_term":"NSDUH-2002-2011-RD10YR","year_range":"2002-2011","start_year":"2002","end_year":"2011", "num_years":"10", "weight":"DASWT_4", "control":"STCTYCOD","filter":"STCTYCOD%3D74%2C75%2C76%2C77"}]
 
+# abbreviated version for testing so it doesn't take forever to run.  Can change county_years to this and comment out get_nsduh_date for state along with shape stuff for a fast run.
 #county_years = [{"url_term":"NSDUH-2010-2019-RD10YR","year_range":"2010-2019","start_year":"2010","end_year":"2019", "num_years":"10", "weight":"DASWT_4", "control":"STCTYCOD2","filter":"STCTYCOD2%3D85%2C83%2C84%2C82"}]
 
-shapefile_years = [{"url":"https://www.samhsa.gov/data/sites/default/files/reports/rpt29384/NSDUHsubstateShapeFile2018/ShapeFile2018.zip","year_range":"2016-2018","start_year":"2016","end_year":"2018","num_years":"2","state_pop":"1,160,319","Hawaii Island":"154486","Honolulu":"818512","Kauai":"56197","Maui":"131124"},
-                    {"url":"https://www.samhsa.gov/data/sites/default/files/cbhsq-reports/NSDUHsubstateShapeFile2016/ShapeFile2016.zip","year_range":"2014-2016","start_year":"2014","end_year":"2016","num_years":"2","state_pop":"1,162,034","Hawaii Island":"155455","Honolulu":"818697","Kauai":"56499","Maui":"131383"},
-                    {"url":"https://www.samhsa.gov/data/sites/default/files/NSDUHsubstateShapeFile2014/NSDUHsubstateShapeFile2014.zip","year_range":"2012-2014","start_year":"2012","end_year":"2014","num_years":"2","state_pop":"1,145,942","Hawaii Island":"154193","Honolulu":"806141","Kauai":"56012","Maui":"129596"},
-                    {"url":"https://www.samhsa.gov/data/sites/default/files/NSDUHsubstateShapeFile2012/NSDUHsubstateShapeFile2012.zip","year_range":"2010-2012","start_year":"2010","end_year":"2012","num_years":"2","state_pop":"1,123,500","Hawaii Island":"152588","Honolulu":"787623","Kauai":"55634","Maui":"127655"},
-                    {"url":"https://www.samhsa.gov/data/sites/default/files/Substate2k10-NSDUHsubstateShapefile2010/NSDUHsubstateShapefile2010.zip","year_range":"2008-2010","start_year":"2008","end_year":"2010","num_years":"2","state_pop":"1,069,970","Hawaii Island":"146741","Honolulu":"753234","Kauai":"52513","Maui":"117482"}]
+shapefile_years = [{"data_source":"SAMHDA NSDUH 2 year (2016-2018) Shapefile Data","url":"https://www.samhsa.gov/data/sites/default/files/reports/rpt29384/NSDUHsubstateShapeFile2018/ShapeFile2018.zip","year_range":"2016-2018","start_year":"2016","end_year":"2018","num_years":"2","state_pop":"1,160,319","Hawaii Island":"154486","Honolulu":"818512","Kauai":"56197","Maui":"131124"},
+                    {"data_source":"SAMHDA NSDUH 2 year (2014-2016) Shapefile Data","url":"https://www.samhsa.gov/data/sites/default/files/cbhsq-reports/NSDUHsubstateShapeFile2016/ShapeFile2016.zip","year_range":"2014-2016","start_year":"2014","end_year":"2016","num_years":"2","state_pop":"1,162,034","Hawaii Island":"155455","Honolulu":"818697","Kauai":"56499","Maui":"131383"},
+                    {"data_source":"SAMHDA NSDUH 2 year (2012-2014) Shapefile Data","url":"https://www.samhsa.gov/data/sites/default/files/NSDUHsubstateShapeFile2014/NSDUHsubstateShapeFile2014.zip","year_range":"2012-2014","start_year":"2012","end_year":"2014","num_years":"2","state_pop":"1,145,942","Hawaii Island":"154193","Honolulu":"806141","Kauai":"56012","Maui":"129596"},
+                    {"data_source":"SAMHDA NSDUH 2 year (2010-2012) Shapefile Data","url":"https://www.samhsa.gov/data/sites/default/files/NSDUHsubstateShapeFile2012/NSDUHsubstateShapeFile2012.zip","year_range":"2010-2012","start_year":"2010","end_year":"2012","num_years":"2","state_pop":"1,123,500","Hawaii Island":"152588","Honolulu":"787623","Kauai":"55634","Maui":"127655"},
+                    {"data_source":"SAMHDA NSDUH 2 year (2008-2010) Shapefile Data","url":"https://www.samhsa.gov/data/sites/default/files/Substate2k10-NSDUHsubstateShapefile2010/NSDUHsubstateShapefile2010.zip","year_range":"2008-2010","start_year":"2008","end_year":"2010","num_years":"2","state_pop":"1,069,970","Hawaii Island":"146741","Honolulu":"753234","Kauai":"52513","Maui":"117482"}]
 
 shapefile_variables = [{"variable":"TXNPILA","row_value":"12 or older","description":"txnpila: needing but not receiving treatment at a specialty facility for substance use in the past year"},
                         {"variable":"METAMYR","row_value":"12 or older","description":"metamyr: methamphetamine use in the past year"},
@@ -170,6 +226,7 @@ def get_nsduh_data(isCounty, results):
             index = 0
             url_term = year["url_term"]
             base_url = f"https://rdas.samhsa.gov/api/surveys/{url_term}/crosstab/"
+            data_source = year["data_source"]
             ctl = year["control"]
             fil = year["filter"]
             wt = year["weight"]
@@ -182,7 +239,7 @@ def get_nsduh_data(isCounty, results):
                     index = index + 1
                     resp = get_url_data(index, base_url, ctl, row, column, fil, wt)
                     if resp.status_code == 200:
-                        parse_data(isCounty, json.loads(resp.text), results, True, start_year, end_year, year_range)
+                        parse_data(isCounty, json.loads(resp.text), results, True, start_year, end_year, year_range, data_source)
                     # if previous attempt didn't work and got a 400, it's likely throttled due to disclosure limitations,
                     # move control to row and drop the previous row which was a demographic thing
                     elif resp.status_code == 400 and resp.text == '{"errorCode":"DISCLOSURE_LIMITATION"}':
@@ -190,7 +247,7 @@ def get_nsduh_data(isCounty, results):
                         print(f"resp.text: {resp.text}")
                         resp = get_url_data(index, base_url, "", ctl, column, fil, wt)
                         if resp.status_code == 200:
-                            parse_data(isCounty, json.loads(resp.text), results, False, start_year, end_year, year_range)
+                            parse_data(isCounty, json.loads(resp.text), results, False, start_year, end_year, year_range, data_source)
                         elif resp.status_code == 400:
                             print(f"resp.reason: {resp.reason}")
                             print(f"resp.text: {resp.text}")
@@ -200,7 +257,7 @@ def get_nsduh_data(isCounty, results):
 
 # called by parse_data to generate a dict using all the given parameters.
 # kinda brain-dead, but I wanted to make sure if one got changed, they both got changed, and this would assure that.
-def make_cell_dict(county, row_type, col_type, row_value, count, start_year, end_year, year_range):
+def make_cell_dict(county, row_type, col_type, row_value, count, start_year, end_year, year_range, data_source):
     #return f"'Hawaii', {county}, {row_type}, {col_type}, {row_value}, {count_weighted}"
     row_type = row_type.lower()
     col_type = col_type.lower()
@@ -227,6 +284,7 @@ def make_cell_dict(county, row_type, col_type, row_value, count, start_year, end
     if col_type and col_type.startswith("rc-"):
         col_type = col_type[3:]
     return dict({
+        "data_source": data_source,
         "state": "Hawaii",
         "county": county,
         "category": row_type,
@@ -246,7 +304,7 @@ def make_cell_dict(county, row_type, col_type, row_value, count, start_year, end
 # results - storage for all the data I'm parsing out.  Gets modified directly, so there's no return value from this
 # hasControl - True if the jsondata was generated using a url that had a control parameter, 
 #              False if the control was moved to the row param
-def parse_data(isCounty, jsondata, results, hasControl, start_year, end_year, year_range):
+def parse_data(isCounty, jsondata, results, hasControl, start_year, end_year, year_range, data_source):
     print(f"in parse_data: hasControl: {hasControl}")
     try:
         jsondata = jsondata["results"]
@@ -266,7 +324,7 @@ def parse_data(isCounty, jsondata, results, hasControl, start_year, end_year, ye
                         county_value = ""
                         if isCounty:
                             county_value = counties[row_option]
-                        d = make_cell_dict(county_value, "", col_dict["title"], "", cell["count"]["weighted"], start_year, end_year, year_range)
+                        d = make_cell_dict(county_value, "", col_dict["title"], "", cell["count"]["weighted"], start_year, end_year, year_range, data_source)
                         #print(f"dict: {d}")
                         results.add(tuple(d.items()))
                     else:
@@ -280,7 +338,7 @@ def parse_data(isCounty, jsondata, results, hasControl, start_year, end_year, ye
                                 # strip off the number dash thing at the beginning
                                 if (row_val and (len(row_val) > 5)):
                                    row_val = row_val[4:]
-                            d = make_cell_dict(county_value, row_dict["title"], col_dict["title"], row_val, cell["count"]["weighted"], start_year, end_year, year_range)
+                            d = make_cell_dict(county_value, row_dict["title"], col_dict["title"], row_val, cell["count"]["weighted"], start_year, end_year, year_range, data_source)
                             #print(f"dict: {d}")
                             results.add(tuple(d.items()))
         print("success")
@@ -400,7 +458,7 @@ def get_shapefile_data(results):
                             count = round(var_val * population / 100)
 
                             #print(f"county: {rd['SR_NAME']}, var: {var_key}, val: {count}")
-                            d = make_cell_dict(rd['SR_NAME'], "age range", var["description"], var["row_value"], count, year["start_year"], year["end_year"], year["year_range"])
+                            d = make_cell_dict(rd['SR_NAME'], "age range", var["description"], var["row_value"], count, year["start_year"], year["end_year"], year["year_range"], year["data_source"])
                             results.add(tuple(d.items()))
 
                             # if no match, change to lower case and try again
@@ -410,7 +468,7 @@ def get_shapefile_data(results):
                             population = float(year[rd['SR_NAME']])
                             count = round(var_val * population / 100)
                             #print(f"county: {rd['SR_NAME']}, var: {var_key}, val: {count}")
-                            d = make_cell_dict(rd['SR_NAME'], "age range", var["description"], var["row_value"], count, year["start_year"], year["end_year"], year["year_range"])
+                            d = make_cell_dict(rd['SR_NAME'], "age range", var["description"], var["row_value"], count, year["start_year"], year["end_year"], year["year_range"], year["data_source"])
                             results.add(tuple(d.items()))
 
 
@@ -513,7 +571,6 @@ def print_url_contents(url):
 load_state_and_county_data()
 #print_url_contents()
 #read_shape_file()
-#write_data_frame_to_db()
 #read_csv_write_to_db()
 
 # -------------------------
