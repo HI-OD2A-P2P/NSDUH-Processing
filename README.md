@@ -50,5 +50,4 @@ To run, go to the directory in which you have installed it and type:
 python NSDUH.py
 
 Be prepared for this to run for quite a while if you're doing a full run.  
-Half an hour?  I never actually timed it, but it seems to take forever.
-"""
+Maybe half an hour?  I never actually timed it, but it seems to take forever.
