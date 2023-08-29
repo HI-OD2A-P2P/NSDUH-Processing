@@ -3,9 +3,9 @@ NSDUH dataset processing scripts for example or adoption
 
 ## General info on what this is and how it works:
 
-SAMHDA: Substance Abuse and Mental Health Data Archive 
-NSDUH: National Survey on Drug Use and Health
-RDAS: Restricted-Use Data Access System
+SAMHDA: Substance Abuse and Mental Health Data Archive <br> 
+NSDUH: National Survey on Drug Use and Health <br>
+RDAS: Restricted-Use Data Access System <br>  
 
 This program gathers SAMHDA NSDUH data via the RDAS API on both the state and 
 county level, as well as processing the SAMHDA NSDUH shapefile data. 
