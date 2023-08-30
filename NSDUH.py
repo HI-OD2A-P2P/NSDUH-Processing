@@ -160,19 +160,19 @@ shapefile_years = [{"data_source":"SAMHDA NSDUH 2 year (2016-2018) Shapefile Dat
                     {"data_source":"SAMHDA NSDUH 2 year (2010-2012) Shapefile Data","url":"https://www.samhsa.gov/data/sites/default/files/NSDUHsubstateShapeFile2012/NSDUHsubstateShapeFile2012.zip","year_range":"2010-2012","start_year":"2010","end_year":"2012","num_years":"2","state_pop":"1,123,500","Hawaii Island":"152588","Honolulu":"787623","Kauai":"55634","Maui":"127655"},
                     {"data_source":"SAMHDA NSDUH 2 year (2008-2010) Shapefile Data","url":"https://www.samhsa.gov/data/sites/default/files/Substate2k10-NSDUHsubstateShapefile2010/NSDUHsubstateShapefile2010.zip","year_range":"2008-2010","start_year":"2008","end_year":"2010","num_years":"2","state_pop":"1,069,970","Hawaii Island":"146741","Honolulu":"753234","Kauai":"52513","Maui":"117482"}]
 
-shapefile_variables = [{"variable":"TXNPILA","row_value":"12 or older","description":"txnpila: needing but not receiving treatment at a specialty facility for substance use in the past year"},
-                        {"variable":"METAMYR","row_value":"12 or older","description":"metamyr: methamphetamine use in the past year"},
-                        {"variable":"PNRNMYR","row_value":"12 or older","description":"pnrnmyr: pain reliever misuse in the past year"},
-                        {"variable":"TXNOSPA","row_value":"12 or older","description":"txnospa: needing but not receiving treatment at a specialty facility for alcohol use in the past year"},
-                        {"variable":"TXNOSPI","row_value":"12 or older","description":"txnospi: needing but not receiving treatment at a specialty facility for illicit drug use in the past year"},
-                        {"variable":"TXREC3","row_value":"18 or older","description":"txrec3: received mental health services in the past year "},
-                        {"variable":"UDPYILA","row_value":"12 or older","description":"udpyila: substance use disorder in the past year"},
-                        {"variable":"UDPYILL","row_value":"12 or older","description":"udpyill: illicit drug use disorder in the past year"},
-                        {"variable":"UDPYPNR","row_value":"12 or older","description":"udpypnr: pain reliever use disorder in the past year"},
-                        {"variable":"ABODALC","row_value":"12 or older","description":"adobalc: past year alcohol dependence or abuse"},
-                        {"variable":"AMIYR","row_value":"18 or older","description":"amiyr: any mental illness (AMI) in the past year"},
-                        {"variable":"COCYR","row_value":"12 or older","description":"mrjyr: past year use of marijuana"},
-                        {"variable":"SMIYR","row_value":"18 or older","description":"smiyr: serious mental illness (SMI) in the past year"}]
+shapefile_variables = [{"variable":"TXNPILA","row_value":"12 or older","description":"txnpila: needing but not receiving treatment at a specialty facility for substance use in the past year (12 or older)"},
+                        {"variable":"METAMYR","row_value":"12 or older","description":"metamyr: methamphetamine use in the past year (12 or older)"},
+                        {"variable":"PNRNMYR","row_value":"12 or older","description":"pnrnmyr: pain reliever misuse in the past year (12 or older)"},
+                        {"variable":"TXNOSPA","row_value":"12 or older","description":"txnospa: needing but not receiving treatment at a specialty facility for alcohol use in the past year (12 or older)"},
+                        {"variable":"TXNOSPI","row_value":"12 or older","description":"txnospi: needing but not receiving treatment at a specialty facility for illicit drug use in the past year (12 or older)"},
+                        {"variable":"TXREC3","row_value":"18 or older","description":"txrec3: received mental health services in the past year (18 or older)"},
+                        {"variable":"UDPYILA","row_value":"12 or older","description":"udpyila: substance use disorder in the past year (12 or older)"},
+                        {"variable":"UDPYILL","row_value":"12 or older","description":"udpyill: illicit drug use disorder in the past year (12 or older)"},
+                        {"variable":"UDPYPNR","row_value":"12 or older","description":"udpypnr: pain reliever use disorder in the past year (12 or older)"},
+                        {"variable":"ABODALC","row_value":"12 or older","description":"adobalc: past year alcohol dependence or abuse (12 or older)"},
+                        {"variable":"AMIYR","row_value":"18 or older","description":"amiyr: any mental illness (AMI) in the past year (18 or older)"},
+                        {"variable":"COCYR","row_value":"12 or older","description":"mrjyr: past year use of marijuana (12 or older)"},
+                        {"variable":"SMIYR","row_value":"18 or older","description":"smiyr: serious mental illness (SMI) in the past year (18 or older)"}]
 
 # list of shapefile col_values that result in us omitting the row.  We only want positives, not negatives
 omit_results = ["0 - No/Unknown", "2 - No", "0 - No Past Year SMI", "0 - No Past Yr Any Mental Illness", "0 - No"]
@@ -334,10 +334,10 @@ def parse_data(isCounty, jsondata, results, hasControl, start_year, end_year, ye
                             county_value = ""
                             if isCounty:
                                 county_value = counties[control_option]
-                                row_val = row_dict[row_option]
-                                # strip off the number dash thing at the beginning
-                                if (row_val and (len(row_val) > 5)):
-                                   row_val = row_val[4:]
+                            row_val = row_dict[row_option]
+                            # strip off the number dash thing at the beginning
+                            if (row_val and (len(row_val) > 5)):
+                                row_val = row_val[4:]
                             d = make_cell_dict(county_value, row_dict["title"], col_dict["title"], row_val, cell["count"]["weighted"], start_year, end_year, year_range, data_source)
                             #print(f"dict: {d}")
                             results.add(tuple(d.items()))
