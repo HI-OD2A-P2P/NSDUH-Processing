@@ -37,11 +37,26 @@ You'll need to hit the "Run Crosstab" button to get the results.
 
 Before running:
 1. Set the csv file and database variables.  Search for "fields you will need
-to edit before running this" and edit the section below.  Make sure the 
-"is_mssql" variable is set to true if you are using  mssql and false if you 
-are using mysql.
+to edit before running this" and edit the section below.  Regardless of whether
+you are running mssql or mysql, you will need to provide the values for the
+db_host, db_name, db_table, db_user, db_pwd, and dir fields.  For the
+other values:
 
-2. Make sure you do not have an already existing csv file or database table
+    Use these values for mssql:
+    > is_mssql = True
+    > 
+    > db_driver = "mssql+pyodbc"
+    >
+    > query_d = { "driver": "ODBC Driver 18 for SQL Server" }
+    
+    Use these for mysql:
+    > is_mssql = False
+    >
+    > db_driver = "mysql+pymysql"
+    >
+    > query_d = {}
+
+3. Make sure you do not have an already existing csv file or database table
 that matches the ones this program will attempt to create.  If there is one 
 of these, either rename it, or change the "csv_file" or "db_table" variables 
 as needed.
