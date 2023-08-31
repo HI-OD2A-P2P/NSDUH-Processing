@@ -160,19 +160,19 @@ shapefile_years = [{"data_source":"SAMHDA NSDUH 2 year (2016-2018) Shapefile Dat
                     {"data_source":"SAMHDA NSDUH 2 year (2010-2012) Shapefile Data","url":"https://www.samhsa.gov/data/sites/default/files/NSDUHsubstateShapeFile2012/NSDUHsubstateShapeFile2012.zip","year_range":"2010-2012","start_year":"2010","end_year":"2012","num_years":"2","state_pop":"1,123,500","Hawaii Island":"152588","Honolulu":"787623","Kauai":"55634","Maui":"127655"},
                     {"data_source":"SAMHDA NSDUH 2 year (2008-2010) Shapefile Data","url":"https://www.samhsa.gov/data/sites/default/files/Substate2k10-NSDUHsubstateShapefile2010/NSDUHsubstateShapefile2010.zip","year_range":"2008-2010","start_year":"2008","end_year":"2010","num_years":"2","state_pop":"1,069,970","Hawaii Island":"146741","Honolulu":"753234","Kauai":"52513","Maui":"117482"}]
 
-shapefile_variables = [{"variable":"TXNPILA","row_value":"12 or older","description":"txnpila: needing but not receiving treatment at a specialty facility for substance use in the past year (12 or older)"},
-                        {"variable":"METAMYR","row_value":"12 or older","description":"metamyr: methamphetamine use in the past year (12 or older)"},
-                        {"variable":"PNRNMYR","row_value":"12 or older","description":"pnrnmyr: pain reliever misuse in the past year (12 or older)"},
-                        {"variable":"TXNOSPA","row_value":"12 or older","description":"txnospa: needing but not receiving treatment at a specialty facility for alcohol use in the past year (12 or older)"},
-                        {"variable":"TXNOSPI","row_value":"12 or older","description":"txnospi: needing but not receiving treatment at a specialty facility for illicit drug use in the past year (12 or older)"},
-                        {"variable":"TXREC3","row_value":"18 or older","description":"txrec3: received mental health services in the past year (18 or older)"},
-                        {"variable":"UDPYILA","row_value":"12 or older","description":"udpyila: substance use disorder in the past year (12 or older)"},
-                        {"variable":"UDPYILL","row_value":"12 or older","description":"udpyill: illicit drug use disorder in the past year (12 or older)"},
-                        {"variable":"UDPYPNR","row_value":"12 or older","description":"udpypnr: pain reliever use disorder in the past year (12 or older)"},
-                        {"variable":"ABODALC","row_value":"12 or older","description":"adobalc: past year alcohol dependence or abuse (12 or older)"},
-                        {"variable":"AMIYR","row_value":"18 or older","description":"amiyr: any mental illness (AMI) in the past year (18 or older)"},
-                        {"variable":"COCYR","row_value":"12 or older","description":"mrjyr: past year use of marijuana (12 or older)"},
-                        {"variable":"SMIYR","row_value":"18 or older","description":"smiyr: serious mental illness (SMI) in the past year (18 or older)"}]
+shapefile_variables = [{"variable":"TXNPILA","row_value":"12 or older","description":"needing but not receiving treatment at a specialty facility for substance use in the past year (12 or older)"},
+                        {"variable":"METAMYR","row_value":"12 or older","description":"methamphetamine use in the past year (12 or older)"},
+                        {"variable":"PNRNMYR","row_value":"12 or older","description":"pain reliever misuse in the past year (12 or older)"},
+                        {"variable":"TXNOSPA","row_value":"12 or older","description":"needing but not receiving treatment at a specialty facility for alcohol use in the past year (12 or older)"},
+                        {"variable":"TXNOSPI","row_value":"12 or older","description":"needing but not receiving treatment at a specialty facility for illicit drug use in the past year (12 or older)"},
+                        {"variable":"TXREC3","row_value":"18 or older","description":"received mental health services in the past year (18 or older)"},
+                        {"variable":"UDPYILA","row_value":"12 or older","description":"substance use disorder in the past year (12 or older)"},
+                        {"variable":"UDPYILL","row_value":"12 or older","description":"illicit drug use disorder in the past year (12 or older)"},
+                        {"variable":"UDPYPNR","row_value":"12 or older","description":"pain reliever use disorder in the past year (12 or older)"},
+                        {"variable":"ABODALC","row_value":"12 or older","description":"past year alcohol dependence or abuse (12 or older)"},
+                        {"variable":"AMIYR","row_value":"18 or older","description":"any mental illness (AMI) in the past year (18 or older)"},
+                        {"variable":"COCYR","row_value":"12 or older","description":"past year use of marijuana (12 or older)"},
+                        {"variable":"SMIYR","row_value":"18 or older","description":"serious mental illness (SMI) in the past year (18 or older)"}]
 
 # list of shapefile col_values that result in us omitting the row.  We only want positives, not negatives
 omit_results = ["0 - No/Unknown", "2 - No", "0 - No Past Year SMI", "0 - No Past Yr Any Mental Illness", "0 - No"]
@@ -269,6 +269,8 @@ def make_cell_dict(county, row_type, col_type, row_value, count, start_year, end
         row_type = "gender"
     if row_type  and row_type == "age category recode (3 levels)":
         row_type = "age (3 levels)" 
+    if row_type  and row_type == "age category recode (5 levels)":
+        row_type = "age (5 levels)" 
     if row_type  and row_type == "rc-age category recode (3 levels)":
         row_type = "age (3 levels)"    
     if row_type  and row_type == "rc-age category recode (5 levels)":
